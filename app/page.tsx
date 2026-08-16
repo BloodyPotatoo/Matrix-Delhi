@@ -214,6 +214,9 @@ export default function PhotoEditor() {
   // Collapsible Left Panel State
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
 
+  // Meme Selector Modal State
+  const [showMemeModal, setShowMemeModal] = useState(false);
+
   // Accordion States for Right Panel
   const [rightAccordion, setRightAccordion] = useState<{ [key: string]: boolean }>({
     opacity: true,
@@ -1391,14 +1394,11 @@ export default function PhotoEditor() {
                   Image Layer
                 </button>
                 <button
-                  onClick={() => {
-                    const randomMeme = MEME_TEMPLATES[Math.floor(Math.random() * MEME_TEMPLATES.length)];
-                    addMemeLayer(randomMeme.name, randomMeme.url);
-                  }}
+                  onClick={() => setShowMemeModal(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
                 >
                   <Smile className="w-3.5 h-3.5 text-amber-400" />
-                  Meme
+                  Memes
                 </button>
                 <button
                   onClick={() => addTextLayer()}
@@ -1788,6 +1788,49 @@ export default function PhotoEditor() {
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Meme Selector Modal */}
+      {showMemeModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Smile className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-lg text-white">Select a Meme Template</h3>
+              </div>
+              <button
+                onClick={() => setShowMemeModal(false)}
+                className="text-zinc-400 hover:text-white text-sm font-medium"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
+              {MEME_TEMPLATES.map((meme) => (
+                <div
+                  key={meme.name}
+                  onClick={() => {
+                    addMemeLayer(meme.name, meme.url);
+                    setShowMemeModal(false);
+                  }}
+                  className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                >
+                  <div className="aspect-video w-full bg-zinc-900 relative overflow-hidden">
+                    <img
+                      src={meme.url}
+                      alt={meme.name}
+                      className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+                    />
+                  </div>
+                  <div className="p-3 text-xs font-semibold text-zinc-200 group-hover:text-indigo-400 transition-colors">
+                    {meme.name}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
