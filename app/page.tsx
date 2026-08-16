@@ -25,7 +25,17 @@ import {
   FileText,
   Layout,
   Palette,
-  Move
+  Move,
+  ChevronLeft,
+  ChevronRight,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Scissors,
+  Paintbrush,
+  Eraser,
+  Smile
 } from 'lucide-react';
 
 // Types & Interfaces
@@ -35,6 +45,7 @@ interface FilterSettings {
   saturation: number;
   blur: number;
   hueRotate: number;
+  gamma: number;
 }
 
 interface Corner {
@@ -44,9 +55,9 @@ interface Corner {
 
 interface Layer {
   id: string;
-  type: 'image' | 'text' | 'shape';
+  type: 'image' | 'text' | 'shape' | 'element';
   name: string;
-  // Image specific
+  // Image/Element specific
   src?: string;
   imgElement?: HTMLImageElement | null;
   warpMode: boolean;
@@ -73,6 +84,12 @@ interface Layer {
   // Text specific
   text?: string;
   fontSize?: number;
+  fontFamily?: string;
+  isBold?: boolean;
+  isItalic?: boolean;
+  isUnderline?: boolean;
+  isStrikethrough?: boolean;
+  letterSpacing?: number;
 }
 
 interface ProjectConfig {
@@ -92,6 +109,7 @@ const DEFAULT_FILTERS: FilterSettings = {
   saturation: 100,
   blur: 0,
   hueRotate: 0,
+  gamma: 100,
 };
 
 const PROJECT_TEMPLATES: ProjectConfig[] = [
@@ -116,16 +134,6 @@ const PROJECT_TEMPLATES: ProjectConfig[] = [
     accentColor: 'from-indigo-500 to-purple-500',
   },
   {
-    id: 'presentation',
-    name: 'Presentation Slide',
-    description: 'Enforce 16:9 widescreen bounding box. Multi-page layout & typography.',
-    aspectRatio: '16:9',
-    ratioValue: 16 / 9,
-    type: 'document',
-    icon: <Layout className="w-6 h-6 text-cyan-400" />,
-    accentColor: 'from-cyan-500 to-blue-500',
-  },
-  {
     id: 'docs',
     name: 'Document / Flyer',
     description: 'Enforce A4 standard portrait ratio (1:1.41). Margins & text layers.',
@@ -134,6 +142,16 @@ const PROJECT_TEMPLATES: ProjectConfig[] = [
     type: 'document',
     icon: <FileText className="w-6 h-6 text-emerald-400" />,
     accentColor: 'from-emerald-500 to-teal-500',
+  },
+  {
+    id: 'presentation',
+    name: 'Presentation Slide',
+    description: 'Enforce 16:9 widescreen bounding box. Multi-page layout & typography.',
+    aspectRatio: '16:9',
+    ratioValue: 16 / 9,
+    type: 'document',
+    icon: <Layout className="w-6 h-6 text-cyan-400" />,
+    accentColor: 'from-cyan-500 to-blue-500',
   },
   {
     id: 'whiteboard',
@@ -170,8 +188,21 @@ export default function PhotoEditor() {
   // Global Canvas Settings
   const [canvasBgColor, setCanvasBgColor] = useState<string>('#ffffff'); // Clean blank white base canvas
 
+  // Collapsible Left Panel State
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+
+  // Accordion States for Right Panel
+  const [rightAccordion, setRightAccordion] = useState<{ [key: string]: boolean }>({
+    opacity: true,
+    filters: false,
+    crop: false,
+    brush: false,
+    text: true,
+  });
+
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const capsuleFileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -181,6 +212,7 @@ export default function PhotoEditor() {
     setView('editor');
     setLayers([]);
     setSelectedLayerId(null);
+    setLeftPanelOpen(true);
   };
 
   // Helper to generate default corners based on position and size
@@ -236,18 +268,42 @@ export default function PhotoEditor() {
   };
 
   // Add Text Layer
-  const addTextLayer = () => {
+  const addTextLayer = (presetType?: 'heading' | 'bold' | 'semibold') => {
     const x = 150;
-    const y = 150;
+    const y = 150 + layers.length * 20;
     const width = 300;
     const height = 60;
+    
+    let text = 'Double click to edit';
+    let fontSize = 36;
+    let isBold = false;
+
+    if (presetType === 'heading') {
+      text = 'Main Heading';
+      fontSize = 48;
+      isBold = true;
+    } else if (presetType === 'bold') {
+      text = 'Bold Subtitle';
+      fontSize = 32;
+      isBold = true;
+    } else if (presetType === 'semibold') {
+      text = 'Semi-bold Text';
+      fontSize = 24;
+    }
+
     const newLayer: Layer = {
       id: Date.now().toString(),
       type: 'text',
-      name: 'Text Layer',
-      text: 'Double click to edit',
-      fontSize: 36,
+      name: text,
+      text: text,
+      fontSize: fontSize,
+      fontFamily: 'sans-serif',
       color: '#000000',
+      isBold: isBold,
+      isItalic: false,
+      isUnderline: false,
+      isStrikethrough: false,
+      letterSpacing: 0,
       warpMode: false,
       corners: getInitialCorners(x, y, width, height),
       x: x,
@@ -290,6 +346,45 @@ export default function PhotoEditor() {
     };
     setLayers((prev) => [...prev, newLayer]);
     setSelectedLayerId(newLayer.id);
+  };
+
+  // Add Element Layer (Stickers/Graphics)
+  const addElementLayer = (name: string, emoji: string) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.font = '96px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(emoji, 64, 64);
+    }
+    const src = canvas.toDataURL();
+    const img = new Image();
+    img.src = src;
+    img.onload = () => {
+      const newLayer: Layer = {
+        id: Date.now().toString(),
+        type: 'element',
+        name: name,
+        src: src,
+        imgElement: img,
+        warpMode: false,
+        corners: getInitialCorners(150, 150, 128, 128),
+        x: 150,
+        y: 150,
+        width: 128,
+        height: 128,
+        rotation: 0,
+        opacity: 100,
+        flipH: false,
+        flipV: false,
+        filters: { ...DEFAULT_FILTERS },
+      };
+      setLayers((prev) => [...prev, newLayer]);
+      setSelectedLayerId(newLayer.id);
+    };
   };
 
   // Layer Stacking Order (z-index)
@@ -346,6 +441,11 @@ export default function PhotoEditor() {
         return l;
       })
     );
+  };
+
+  // Toggle Accordion Section
+  const toggleAccordion = (section: string) => {
+    setRightAccordion(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
   // Reset all edits
@@ -465,7 +565,8 @@ export default function PhotoEditor() {
       // Apply global layer opacity
       ctx.globalAlpha = layer.opacity / 100;
 
-      if (layer.type === 'image' && layer.imgElement) {
+      if ((layer.type === 'image' || layer.type === 'element') && layer.imgElement) {
+        // Apply filters
         ctx.filter = `
           brightness(${layer.filters.brightness}%) 
           contrast(${layer.filters.contrast}%) 
@@ -502,10 +603,35 @@ export default function PhotoEditor() {
 
         if (layer.type === 'text' && layer.text) {
           ctx.fillStyle = layer.color || '#000000';
-          ctx.font = `bold ${layer.fontSize || 24}px sans-serif`;
+          
+          // Build font string
+          const fontStyle = layer.isItalic ? 'italic' : 'normal';
+          const fontWeight = layer.isBold ? 'bold' : 'normal';
+          ctx.font = `${fontStyle} ${fontWeight} ${layer.fontSize || 24}px ${layer.fontFamily || 'sans-serif'}`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
+          
+          // Draw text
           ctx.fillText(layer.text, 0, 0);
+
+          // Underline & Strikethrough simulation
+          const textWidth = ctx.measureText(layer.text).width;
+          if (layer.isUnderline) {
+            ctx.beginPath();
+            ctx.moveTo(-textWidth / 2, (layer.fontSize || 24) / 2);
+            ctx.lineTo(textWidth / 2, (layer.fontSize || 24) / 2);
+            ctx.strokeStyle = layer.color || '#000000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+          if (layer.isStrikethrough) {
+            ctx.beginPath();
+            ctx.moveTo(-textWidth / 2, 0);
+            ctx.lineTo(textWidth / 2, 0);
+            ctx.strokeStyle = layer.color || '#000000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
         } else if (layer.type === 'shape') {
           ctx.fillStyle = layer.color || '#a855f7';
           if (layer.shapeType === 'rect') {
@@ -888,7 +1014,7 @@ export default function PhotoEditor() {
         <div className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full flex flex-col justify-center">
           <div className="text-center mb-12">
             {/* Hero Typography & Visual Hierarchy */}
-            <h1 className="text-6xl md:text-8xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 drop-shadow-[0_5px_15px_rgba(99,102,241,0.4)] uppercase font-mono mb-4">
+            <h1 className="text-6xl md:text-8xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 drop-shadow-[0_6px_0_#4f46e5] uppercase font-mono mb-4">
               PIXELCRAFT
             </h1>
             <h2 className="text-2xl font-bold tracking-tight text-zinc-200 mb-3">
@@ -899,6 +1025,7 @@ export default function PhotoEditor() {
             </p>
           </div>
 
+          {/* Navigation Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {PROJECT_TEMPLATES.map((project) => (
               <div
@@ -937,455 +1064,645 @@ export default function PhotoEditor() {
 
       {/* View B: Active Editor Workspace */}
       {view === 'editor' && (
-        <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* Left/Center: Dynamic Canvas Preview Area */}
-          <div 
-            ref={containerRef}
-            className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden bg-zinc-950"
-          >
-            {/* Dynamic Aspect Ratio Container */}
-            <div 
-              className="relative w-full h-full flex items-center justify-center"
-              style={{
-                maxHeight: '75vh',
-              }}
-            >
-              <div 
-                className="relative bg-zinc-900 rounded-xl shadow-2xl border border-zinc-800 overflow-hidden flex items-center justify-center"
-                style={{
-                  aspectRatio: activeProject.aspectRatio === 'freeform' ? 'auto' : activeProject.ratioValue,
-                  width: '100%',
-                  maxWidth: activeProject.aspectRatio === '1:1.41' ? '500px' : '850px',
-                  height: activeProject.aspectRatio === 'freeform' ? '500px' : 'auto',
-                }}
-              >
-                <canvas
-                  ref={canvasRef}
-                  onMouseDown={handleCanvasMouseDown}
-                  className="w-full h-full object-contain cursor-move"
-                />
-              </div>
-            </div>
-
-            {/* Quick Layer Import Bar */}
-            <div className="mt-4 flex items-center gap-3 bg-zinc-900/80 px-4 py-2.5 rounded-xl border border-zinc-800 backdrop-blur-md">
-              <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mr-2">Add Layer:</span>
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          
+          {/* Context-Aware Capsule Header */}
+          <div className="w-full flex justify-center py-3 bg-zinc-950/80 border-b border-zinc-800/50 z-20">
+            <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800 shadow-xl">
+              {/* Import Button */}
               <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                onClick={() => capsuleFileInputRef.current?.click()}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-full bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
               >
                 <Upload className="w-3.5 h-3.5" />
-                Image Layer
-              </button>
-              <button
-                onClick={addTextLayer}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
-              >
-                <Type className="w-3.5 h-3.5" />
-                Text Layer
-              </button>
-              <button
-                onClick={() => addShapeLayer('rect')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
-              >
-                <Square className="w-3.5 h-3.5" />
-                Rectangle
-              </button>
-              <button
-                onClick={() => addShapeLayer('circle')}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
-              >
-                <Circle className="w-3.5 h-3.5" />
-                Circle
+                Import
               </button>
               <input
-                ref={fileInputRef}
+                ref={capsuleFileInputRef}
                 type="file"
                 accept="image/*"
                 onChange={handleImportImage}
                 className="hidden"
               />
+
+              <div className="h-4 w-[1px] bg-zinc-800 mx-1" />
+
+              {/* Text Styling Actions (Conditional Formatting) */}
+              <button
+                disabled={!selectedLayer || selectedLayer.type !== 'text'}
+                onClick={() => updateSelectedLayer({ isBold: !selectedLayer?.isBold })}
+                className={`p-1.5 rounded-lg transition-all ${
+                  !selectedLayer || selectedLayer.type !== 'text'
+                    ? 'text-zinc-600 cursor-not-allowed'
+                    : selectedLayer.isBold
+                    ? 'bg-indigo-500/20 text-indigo-400'
+                    : 'text-zinc-300 hover:bg-zinc-800'
+                }`}
+                title="Bold"
+              >
+                <Bold className="w-4 h-4" />
+              </button>
+
+              <button
+                disabled={!selectedLayer || selectedLayer.type !== 'text'}
+                onClick={() => updateSelectedLayer({ isItalic: !selectedLayer?.isItalic })}
+                className={`p-1.5 rounded-lg transition-all ${
+                  !selectedLayer || selectedLayer.type !== 'text'
+                    ? 'text-zinc-600 cursor-not-allowed'
+                    : selectedLayer.isItalic
+                    ? 'bg-indigo-500/20 text-indigo-400'
+                    : 'text-zinc-300 hover:bg-zinc-800'
+                }`}
+                title="Italic"
+              >
+                <Italic className="w-4 h-4" />
+              </button>
+
+              <button
+                disabled={!selectedLayer || selectedLayer.type !== 'text'}
+                onClick={() => updateSelectedLayer({ isUnderline: !selectedLayer?.isUnderline })}
+                className={`p-1.5 rounded-lg transition-all ${
+                  !selectedLayer || selectedLayer.type !== 'text'
+                    ? 'text-zinc-600 cursor-not-allowed'
+                    : selectedLayer.isUnderline
+                    ? 'bg-indigo-500/20 text-indigo-400'
+                    : 'text-zinc-300 hover:bg-zinc-800'
+                }`}
+                title="Underline"
+              >
+                <Underline className="w-4 h-4" />
+              </button>
+
+              <button
+                disabled={!selectedLayer || selectedLayer.type !== 'text'}
+                onClick={() => updateSelectedLayer({ isStrikethrough: !selectedLayer?.isStrikethrough })}
+                className={`p-1.5 rounded-lg transition-all ${
+                  !selectedLayer || selectedLayer.type !== 'text'
+                    ? 'text-zinc-600 cursor-not-allowed'
+                    : selectedLayer.isStrikethrough
+                    ? 'bg-indigo-500/20 text-indigo-400'
+                    : 'text-zinc-300 hover:bg-zinc-800'
+                }`}
+                title="Strikethrough"
+              >
+                <Strikethrough className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
-          {/* Right Sidebar: Unified "Single-Tab" Properties Dashboard */}
-          <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-zinc-800 bg-zinc-900/30 backdrop-blur-md flex flex-col h-[45vh] lg:h-full overflow-y-auto">
-            <div className="p-6 space-y-6">
-              
-              {/* Section 1: Global Canvas Settings */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Layout className="w-4 h-4 text-indigo-400" />
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Canvas Settings</h2>
-                </div>
-                <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-zinc-400">Active Template:</span>
-                    <span className="text-indigo-400 font-semibold">{activeProject.name}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-zinc-400">Aspect Ratio:</span>
-                    <span className="text-indigo-400 font-semibold">{activeProject.aspectRatio}</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] text-zinc-400 block">Base Canvas Color</label>
-                    <div className="flex gap-2">
-                      {['#ffffff', '#f3f4f6', '#18181b', '#09090b', '#312e81'].map((color) => (
-                        <button
-                          key={color}
-                          onClick={() => setCanvasBgColor(color)}
-                          className={`w-6 h-6 rounded-md border transition-all ${
-                            canvasBgColor === color ? 'border-indigo-500 scale-110' : 'border-zinc-800'
-                          }`}
-                          style={{ backgroundColor: color }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+          <div className="flex-1 flex overflow-hidden">
+            
+            {/* Collapsible Left Panel (Asset Library) */}
+            {(activeProject.id === 'thumbnail' || activeProject.id === 'instagram') && (
+              <div 
+                className={`border-r border-zinc-800 bg-zinc-900/50 backdrop-blur-md flex flex-col transition-all duration-300 relative z-10 ${
+                  leftPanelOpen ? 'w-72' : 'w-0 overflow-hidden border-r-0'
+                }`}
+              >
+                {/* Toggle Button */}
+                <button
+                  onClick={() => setLeftPanelOpen(!leftPanelOpen)}
+                  className="absolute top-1/2 -right-4 -translate-y-1/2 w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center text-zinc-400 hover:text-white shadow-lg z-30"
+                >
+                  {leftPanelOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </button>
 
-              {/* Section 2: Layer List & Stacking */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-indigo-400" />
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Layers ({layers.length})</h2>
-                  </div>
-                  {selectedLayerId && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => moveLayer('up')}
-                        className="p-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300"
-                        title="Move Layer Up"
-                      >
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => moveLayer('down')}
-                        className="p-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300"
-                        title="Move Layer Down"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={deleteLayer}
-                        className="p-1 bg-red-950/50 hover:bg-red-900/50 rounded text-red-400 ml-1"
-                        title="Delete Layer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {layers.length === 0 ? (
-                  <div className="text-center py-6 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-xl text-xs text-zinc-500">
-                    No layers added yet. Use the bar below the canvas to add layers.
-                  </div>
-                ) : (
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                    {layers.map((layer) => (
-                      <div
-                        key={layer.id}
-                        onClick={() => setSelectedLayerId(layer.id)}
-                        className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs cursor-pointer transition-all ${
-                          layer.id === selectedLayerId
-                            ? 'bg-indigo-600/10 border-indigo-500 text-indigo-300'
-                            : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400'
-                        }`}
-                      >
-                        <span className="truncate font-medium">{layer.name}</span>
-                        <span className="text-[10px] text-zinc-500 uppercase">{layer.type}</span>
+                {leftPanelOpen && (
+                  <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                    {/* Templates Section */}
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Templates</h3>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button 
+                          onClick={() => addTextLayer('heading')}
+                          className="p-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-left text-xs transition-all"
+                        >
+                          <div className="font-bold text-indigo-400">YouTube</div>
+                          <div className="text-[10px] text-zinc-500">Thumbnail Layout</div>
+                        </button>
+                        <button 
+                          onClick={() => addTextLayer('bold')}
+                          className="p-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-left text-xs transition-all"
+                        >
+                          <div className="font-bold text-pink-400">Instagram</div>
+                          <div className="text-[10px] text-zinc-500">Square Post</div>
+                        </button>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Elements Section */}
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Elements</h3>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { name: 'Star', emoji: '⭐' },
+                          { name: 'Fire', emoji: '🔥' },
+                          { name: 'Heart', emoji: '❤️' },
+                          { name: 'Rocket', emoji: '🚀' },
+                          { name: 'Cool', emoji: '😎' },
+                          { name: 'Spark', emoji: '✨' },
+                        ].map((el) => (
+                          <button
+                            key={el.name}
+                            onClick={() => addElementLayer(el.name, el.emoji)}
+                            className="p-2 bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-800/80 rounded-lg text-center text-lg transition-all"
+                            title={el.name}
+                          >
+                            {el.emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Texts Section */}
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Texts</h3>
+                      <div className="space-y-2">
+                        <button
+                          onClick={() => addTextLayer('heading')}
+                          className="w-full py-2 px-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left text-sm font-bold transition-all"
+                        >
+                          Add Heading
+                        </button>
+                        <button
+                          onClick={() => addTextLayer('bold')}
+                          className="w-full py-2 px-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left text-xs font-semibold transition-all"
+                        >
+                          Add Subtitle
+                        </button>
+                        <button
+                          onClick={() => addTextLayer('semibold')}
+                          className="w-full py-2 px-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left text-[11px] transition-all"
+                        >
+                          Add Body Text
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tools Section */}
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Tools</h3>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => addShapeLayer('rect')}
+                          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-center text-xs transition-all flex flex-col items-center gap-1"
+                        >
+                          <Square className="w-4 h-4 text-indigo-400" />
+                          Rectangle
+                        </button>
+                        <button
+                          onClick={() => addShapeLayer('circle')}
+                          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-center text-xs transition-all flex flex-col items-center gap-1"
+                        >
+                          <Circle className="w-4 h-4 text-indigo-400" />
+                          Circle
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
+            )}
 
-              {/* Section 3: Selected Layer Properties (Unified Panel) */}
-              {selectedLayer ? (
-                <div className="space-y-5 pt-4 border-t border-zinc-800">
-                  <div className="flex items-center gap-2">
-                    <Sliders className="w-4 h-4 text-purple-400" />
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                      Properties: <span className="text-purple-400">{selectedLayer.name}</span>
-                    </h2>
-                  </div>
+            {/* Left Panel Toggle Button when closed */}
+            {(activeProject.id === 'thumbnail' || activeProject.id === 'instagram') && !leftPanelOpen && (
+              <button
+                onClick={() => setLeftPanelOpen(true)}
+                className="absolute top-1/2 left-0 -translate-y-1/2 w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-r-full flex items-center justify-center text-zinc-400 hover:text-white shadow-lg z-30"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
 
-                  {/* Distortion Mode Toggle (Only for Image Layers) */}
-                  {selectedLayer.type === 'image' && (
-                    <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-xs font-semibold text-zinc-300 block">Perspective Warp Mode</span>
-                          <span className="text-[10px] text-zinc-500">Drag corners independently to distort</span>
-                        </div>
-                        <button
-                          onClick={() => {
-                            const nextWarp = !selectedLayer.warpMode;
-                            updateSelectedLayer({ 
-                              warpMode: nextWarp,
-                              corners: getInitialCorners(selectedLayer.x, selectedLayer.y, selectedLayer.width, selectedLayer.height)
-                            });
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            selectedLayer.warpMode 
-                              ? 'bg-pink-600 text-white shadow-lg shadow-pink-600/20' 
-                              : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                          }`}
-                        >
-                          {selectedLayer.warpMode ? 'Active' : 'Inactive'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Text Specific Controls */}
-                  {selectedLayer.type === 'text' && (
-                    <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
-                      <div>
-                        <label className="text-[11px] text-zinc-400 block mb-1">Text Content</label>
-                        <input
-                          type="text"
-                          value={selectedLayer.text || ''}
-                          onChange={(e) => updateSelectedLayer({ text: e.target.value })}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                          <span>Font Size</span>
-                          <span>{selectedLayer.fontSize}px</span>
-                        </div>
-                        <input
-                          type="range" min="12" max="120"
-                          value={selectedLayer.fontSize || 24}
-                          onChange={(e) => updateSelectedLayer({ fontSize: Number(e.target.value) })}
-                          className="w-full accent-indigo-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-zinc-400 block mb-1">Text Color</label>
-                        <div className="flex gap-2">
-                          {['#000000', '#ffffff', '#ef4444', '#3b82f6', '#10b981', '#f59e0b'].map((color) => (
-                            <button
-                              key={color}
-                              onClick={() => updateSelectedLayer({ color })}
-                              className={`w-5 h-5 rounded-full border transition-all ${
-                                selectedLayer.color === color ? 'border-white scale-110' : 'border-transparent'
-                              }`}
-                              style={{ backgroundColor: color }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Shape Specific Controls */}
-                  {selectedLayer.type === 'shape' && (
-                    <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
-                      <div>
-                        <label className="text-[11px] text-zinc-400 block mb-1">Shape Color</label>
-                        <div className="flex gap-2">
-                          {['#a855f7', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ffffff'].map((color) => (
-                            <button
-                              key={color}
-                              onClick={() => updateSelectedLayer({ color })}
-                              className={`w-5 h-5 rounded-full border transition-all ${
-                                selectedLayer.color === color ? 'border-white scale-110' : 'border-transparent'
-                              }`}
-                              style={{ backgroundColor: color }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Transform & Position Controls */}
-                  <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-4">
-                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Transform & Position</h3>
-                    
-                    {!selectedLayer.warpMode ? (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[10px] text-zinc-500">Position X</label>
-                          <input
-                            type="number"
-                            value={selectedLayer.x}
-                            onChange={(e) => updateSelectedLayer({ x: Number(e.target.value) })}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-zinc-500">Position Y</label>
-                          <input
-                            type="number"
-                            value={selectedLayer.y}
-                            onChange={(e) => updateSelectedLayer({ y: Number(e.target.value) })}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-zinc-500">Width</label>
-                          <input
-                            type="number"
-                            value={selectedLayer.width}
-                            onChange={(e) => updateSelectedLayer({ width: Number(e.target.value) })}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-zinc-500">Height</label>
-                          <input
-                            type="number"
-                            value={selectedLayer.height}
-                            onChange={(e) => updateSelectedLayer({ height: Number(e.target.value) })}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <span className="text-[10px] text-zinc-400 block font-semibold">Corner Coordinates (Warp Mode)</span>
-                        <div className="grid grid-cols-2 gap-2 text-[10px] bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
-                          <div>TL: ({selectedLayer.corners.tl.x}, {selectedLayer.corners.tl.y})</div>
-                          <div>TR: ({selectedLayer.corners.tr.x}, {selectedLayer.corners.tr.y})</div>
-                          <div>BL: ({selectedLayer.corners.bl.x}, {selectedLayer.corners.bl.y})</div>
-                          <div>BR: ({selectedLayer.corners.br.x}, {selectedLayer.corners.br.y})</div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Rotation */}
-                    {!selectedLayer.warpMode && (
-                      <div>
-                        <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                          <span>Rotation</span>
-                          <span>{selectedLayer.rotation}°</span>
-                        </div>
-                        <input
-                          type="range" min="0" max="360"
-                          value={selectedLayer.rotation}
-                          onChange={(e) => updateSelectedLayer({ rotation: Number(e.target.value) })}
-                          className="w-full accent-purple-500"
-                        />
-                      </div>
-                    )}
-
-                    {/* Opacity */}
-                    <div>
-                      <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                        <span>Layer Opacity</span>
-                        <span>{selectedLayer.opacity}%</span>
-                      </div>
-                      <input
-                        type="range" min="0" max="100"
-                        value={selectedLayer.opacity}
-                        onChange={(e) => updateSelectedLayer({ opacity: Number(e.target.value) })}
-                        className="w-full accent-purple-500"
-                      />
-                    </div>
-
-                    {/* Flips */}
-                    {!selectedLayer.warpMode && (
-                      <div className="flex gap-2 pt-1">
-                        <button
-                          onClick={() => updateSelectedLayer({ flipH: !selectedLayer.flipH })}
-                          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 border rounded-lg text-xs transition-all ${
-                            selectedLayer.flipH 
-                              ? 'bg-purple-600/10 border-purple-500 text-purple-300' 
-                              : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
-                          }`}
-                        >
-                          <FlipHorizontal className="w-3.5 h-3.5" />
-                          Flip H
-                        </button>
-                        <button
-                          onClick={() => updateSelectedLayer({ flipV: !selectedLayer.flipV })}
-                          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 border rounded-lg text-xs transition-all ${
-                            selectedLayer.flipV 
-                              ? 'bg-purple-600/10 border-purple-500 text-purple-300' 
-                              : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
-                          }`}
-                        >
-                          <FlipVertical className="w-3.5 h-3.5" />
-                          Flip V
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Image Filters (Only for Image Layers) */}
-                  {selectedLayer.type === 'image' && (
-                    <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-4">
-                      <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Filters & Adjustments</h3>
-                      
-                      {/* Brightness */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-zinc-400">Brightness</span>
-                          <span className="text-purple-400">{selectedLayer.filters.brightness}%</span>
-                        </div>
-                        <input
-                          type="range" min="0" max="200" value={selectedLayer.filters.brightness}
-                          onChange={(e) => updateSelectedLayerFilters({ brightness: Number(e.target.value) })}
-                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                        />
-                      </div>
-
-                      {/* Contrast */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-zinc-400">Contrast</span>
-                          <span className="text-purple-400">{selectedLayer.filters.contrast}%</span>
-                        </div>
-                        <input
-                          type="range" min="0" max="200" value={selectedLayer.filters.contrast}
-                          onChange={(e) => updateSelectedLayerFilters({ contrast: Number(e.target.value) })}
-                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                        />
-                      </div>
-
-                      {/* Saturation */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-zinc-400">Saturation</span>
-                          <span className="text-purple-400">{selectedLayer.filters.saturation}%</span>
-                        </div>
-                        <input
-                          type="range" min="0" max="200" value={selectedLayer.filters.saturation}
-                          onChange={(e) => updateSelectedLayerFilters({ saturation: Number(e.target.value) })}
-                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                        />
-                      </div>
-
-                      {/* Blur */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-zinc-400">Blur</span>
-                          <span className="text-purple-400">{selectedLayer.filters.blur}px</span>
-                        </div>
-                        <input
-                          type="range" min="0" max="20" value={selectedLayer.filters.blur}
-                          onChange={(e) => updateSelectedLayerFilters({ blur: Number(e.target.value) })}
-                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                        />
-                      </div>
-                    </div>
-                  )}
+            {/* Center: Canvas Workspace */}
+            <div 
+              ref={containerRef}
+              className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden bg-zinc-950"
+            >
+              {/* Dynamic Aspect Ratio Container */}
+              <div 
+                className="relative w-full h-full flex items-center justify-center"
+                style={{
+                  maxHeight: '70vh',
+                }}
+              >
+                <div 
+                  className="relative bg-zinc-900 rounded-xl shadow-2xl border border-zinc-800 overflow-hidden flex items-center justify-center"
+                  style={{
+                    aspectRatio: activeProject.aspectRatio === 'freeform' ? 'auto' : activeProject.ratioValue,
+                    width: '100%',
+                    maxWidth: activeProject.aspectRatio === '1:1.41' ? '480px' : '800px',
+                    height: activeProject.aspectRatio === 'freeform' ? '480px' : 'auto',
+                  }}
+                >
+                  <canvas
+                    ref={canvasRef}
+                    onMouseDown={handleCanvasMouseDown}
+                    className="w-full h-full object-contain cursor-move"
+                  />
                 </div>
-              ) : (
-                <div className="text-center py-8 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-xl text-xs text-zinc-500">
-                  Select a layer on the canvas or in the list to view and edit properties.
-                </div>
-              )}
+              </div>
 
+              {/* Quick Layer Import Bar */}
+              <div className="mt-4 flex items-center gap-3 bg-zinc-900/80 px-4 py-2.5 rounded-xl border border-zinc-800 backdrop-blur-md">
+                <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mr-2">Add Layer:</span>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Image Layer
+                </button>
+                <button
+                  onClick={() => addTextLayer()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                >
+                  <Type className="w-3.5 h-3.5" />
+                  Text Layer
+                </button>
+                <button
+                  onClick={() => addShapeLayer('rect')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                >
+                  <Square className="w-3.5 h-3.5" />
+                  Rectangle
+                </button>
+                <button
+                  onClick={() => addShapeLayer('circle')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                >
+                  <Circle className="w-3.5 h-3.5" />
+                  Circle
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImportImage}
+                  className="hidden"
+                />
+              </div>
             </div>
+
+            {/* Right Sidebar: Interactive Advanced Property Bar */}
+            <div className="w-full lg:w-96 border-l border-zinc-800 bg-zinc-900/30 backdrop-blur-md flex flex-col h-full overflow-y-auto">
+              <div className="p-6 space-y-6">
+                
+                {/* Section 1: Global Canvas Settings */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Layout className="w-4 h-4 text-indigo-400" />
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Canvas Settings</h2>
+                  </div>
+                  <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Active Template:</span>
+                      <span className="text-indigo-400 font-semibold">{activeProject.name}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Aspect Ratio:</span>
+                      <span className="text-indigo-400 font-semibold">{activeProject.aspectRatio}</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-zinc-400 block">Base Canvas Color</label>
+                      <div className="flex gap-2">
+                        {['#ffffff', '#f3f4f6', '#18181b', '#09090b', '#312e81'].map((color) => (
+                          <button
+                            key={color}
+                            onClick={() => setCanvasBgColor(color)}
+                            className={`w-6 h-6 rounded-md border transition-all ${
+                              canvasBgColor === color ? 'border-indigo-500 scale-110' : 'border-zinc-800'
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Layer List & Stacking */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-indigo-400" />
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Layers ({layers.length})</h2>
+                    </div>
+                    {selectedLayerId && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => moveLayer('up')}
+                          className="p-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300"
+                          title="Move Layer Up"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => moveLayer('down')}
+                          className="p-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300"
+                          title="Move Layer Down"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={deleteLayer}
+                          className="p-1 bg-red-950/50 hover:bg-red-900/50 rounded text-red-400 ml-1"
+                          title="Delete Layer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {layers.length === 0 ? (
+                    <div className="text-center py-6 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-xl text-xs text-zinc-500">
+                      No layers added yet. Use the bar below the canvas to add layers.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                      {layers.map((layer) => (
+                        <div
+                          key={layer.id}
+                          onClick={() => setSelectedLayerId(layer.id)}
+                          className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                            layer.id === selectedLayerId
+                              ? 'bg-indigo-600/10 border-indigo-500 text-indigo-300'
+                              : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400'
+                          }`}
+                        >
+                          <span className="truncate font-medium">{layer.name}</span>
+                          <span className="text-[10px] text-zinc-500 uppercase">{layer.type}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Section 3: Selected Layer Properties (Accordion Panel) */}
+                {selectedLayer ? (
+                  <div className="space-y-4 pt-4 border-t border-zinc-800">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sliders className="w-4 h-4 text-purple-400" />
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                        Properties: <span className="text-purple-400">{selectedLayer.name}</span>
+                      </h2>
+                    </div>
+
+                    {/* Accordion 1: Opacity & Layer Alpha */}
+                    <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                      <button
+                        onClick={() => toggleAccordion('opacity')}
+                        className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                      >
+                        <span>Opacity & Layer Alpha</span>
+                        <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${rightAccordion.opacity ? 'rotate-180' : ''}`} />
+                      </button>
+                      {rightAccordion.opacity && (
+                        <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                          <div>
+                            <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                              <span>Layer Opacity</span>
+                              <span>{selectedLayer.opacity}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="100"
+                              value={selectedLayer.opacity}
+                              onChange={(e) => updateSelectedLayer({ opacity: Number(e.target.value) })}
+                              className="w-full accent-purple-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Accordion 2: Filters & Adjustments */}
+                    <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                      <button
+                        onClick={() => toggleAccordion('filters')}
+                        className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                      >
+                        <span>Filters & Adjustments</span>
+                        <Sliders className="w-4 h-4 text-zinc-500" />
+                      </button>
+                      {rightAccordion.filters && (
+                        <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                          {/* Brightness */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Brightness</span>
+                              <span className="text-purple-400">{selectedLayer.filters.brightness}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="200" value={selectedLayer.filters.brightness}
+                              onChange={(e) => updateSelectedLayerFilters({ brightness: Number(e.target.value) })}
+                              className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+
+                          {/* Contrast */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Contrast</span>
+                              <span className="text-purple-400">{selectedLayer.filters.contrast}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="200" value={selectedLayer.filters.contrast}
+                              onChange={(e) => updateSelectedLayerFilters({ contrast: Number(e.target.value) })}
+                              className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+
+                          {/* Saturation */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Saturation</span>
+                              <span className="text-purple-400">{selectedLayer.filters.saturation}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="200" value={selectedLayer.filters.saturation}
+                              onChange={(e) => updateSelectedLayerFilters({ saturation: Number(e.target.value) })}
+                              className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+
+                          {/* Hue Rotate */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Hue Rotate</span>
+                              <span className="text-purple-400">{selectedLayer.filters.hueRotate}°</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="360" value={selectedLayer.filters.hueRotate}
+                              onChange={(e) => updateSelectedLayerFilters({ hueRotate: Number(e.target.value) })}
+                              className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+
+                          {/* Gamma Correction */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Gamma Correction</span>
+                              <span className="text-purple-400">{selectedLayer.filters.gamma}%</span>
+                            </div>
+                            <input
+                              type="range" min="10" max="200" value={selectedLayer.filters.gamma}
+                              onChange={(e) => updateSelectedLayerFilters({ gamma: Number(e.target.value) })}
+                              className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Accordion 3: Crop & Perspective Warp */}
+                    {selectedLayer.type === 'image' && (
+                      <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                        <button
+                          onClick={() => toggleAccordion('crop')}
+                          className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                        >
+                          <span>Crop & Perspective Warp</span>
+                          <Maximize2 className="w-4 h-4 text-zinc-500" />
+                        </button>
+                        {rightAccordion.crop && (
+                          <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-xs font-semibold text-zinc-300 block">Perspective Warp Mode</span>
+                                <span className="text-[10px] text-zinc-500">Drag corners independently to distort</span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const nextWarp = !selectedLayer.warpMode;
+                                  updateSelectedLayer({ 
+                                    warpMode: nextWarp,
+                                    corners: getInitialCorners(selectedLayer.x, selectedLayer.y, selectedLayer.width, selectedLayer.height)
+                                  });
+                                }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  selectedLayer.warpMode 
+                                    ? 'bg-pink-600 text-white shadow-lg shadow-pink-600/20' 
+                                    : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                                }`}
+                              >
+                                {selectedLayer.warpMode ? 'Active' : 'Inactive'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Accordion 4: Brush & Eraser Properties */}
+                    {activeProject.type === 'whiteboard' && (
+                      <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                        <button
+                          onClick={() => toggleAccordion('brush')}
+                          className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                        >
+                          <span>Brush & Eraser Properties</span>
+                          <Paintbrush className="w-4 h-4 text-zinc-500" />
+                        </button>
+                        {rightAccordion.brush && (
+                          <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                            <div>
+                              <label className="text-xs text-zinc-400 block mb-2">Brush Color</label>
+                              <div className="flex gap-2">
+                                {['#a855f7', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ffffff'].map((color) => (
+                                  <button
+                                    key={color}
+                                    onClick={() => updateSelectedLayer({ color })}
+                                    className={`w-6 h-6 rounded-full border-2 transition-all ${
+                                      selectedLayer.color === color ? 'border-white scale-110' : 'border-transparent'
+                                    }`}
+                                    style={{ backgroundColor: color }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Accordion 5: Typography & Text Box */}
+                    {selectedLayer.type === 'text' && (
+                      <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                        <button
+                          onClick={() => toggleAccordion('text')}
+                          className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                        >
+                          <span>Typography & Text Box</span>
+                          <Type className="w-4 h-4 text-zinc-500" />
+                        </button>
+                        {rightAccordion.text && (
+                          <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                            <div>
+                              <label className="text-[11px] text-zinc-400 block mb-1">Text Content</label>
+                              <input
+                                type="text"
+                                value={selectedLayer.text || ''}
+                                onChange={(e) => updateSelectedLayer({ text: e.target.value })}
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                                <span>Font Size</span>
+                                <span>{selectedLayer.fontSize}px</span>
+                              </div>
+                              <input
+                                type="range" min="12" max="120"
+                                value={selectedLayer.fontSize || 24}
+                                onChange={(e) => updateSelectedLayer({ fontSize: Number(e.target.value) })}
+                                className="w-full accent-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                                <span>Letter Spacing</span>
+                                <span>{selectedLayer.letterSpacing || 0}px</span>
+                              </div>
+                              <input
+                                type="range" min="-5" max="20"
+                                value={selectedLayer.letterSpacing || 0}
+                                onChange={(e) => updateSelectedLayer({ letterSpacing: Number(e.target.value) })}
+                                className="w-full accent-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-zinc-400 block mb-1">Text Color</label>
+                              <div className="flex gap-2">
+                                {['#000000', '#ffffff', '#ef4444', '#3b82f6', '#10b981', '#f59e0b'].map((color) => (
+                                  <button
+                                    key={color}
+                                    onClick={() => updateSelectedLayer({ color })}
+                                    className={`w-5 h-5 rounded-full border transition-all ${
+                                      selectedLayer.color === color ? 'border-white scale-110' : 'border-transparent'
+                                    }`}
+                                    style={{ backgroundColor: color }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-xl text-xs text-zinc-500">
+                    Select a layer on the canvas or in the list to view and edit properties.
+                  </div>
+                )}
+
+              </div>
+            </div>
+
           </div>
-        </main>
+        </div>
       )}
     </div>
   );
