@@ -51,7 +51,10 @@ import {
   Sun,
   Moon,
   Folder,
-  Grid
+  Grid,
+  Save,
+  CheckCircle,
+  Info
 } from 'lucide-react';
 
 // Types & Interfaces
@@ -73,7 +76,6 @@ interface Layer {
   id: string;
   type: 'image' | 'text' | 'shape' | 'element' | 'sticky';
   name: string;
-  // Image/Element specific
   src?: string;
   imgElement?: HTMLImageElement | null;
   warpMode: boolean;
@@ -85,21 +87,17 @@ interface Layer {
     bl: Corner;
     br: Corner;
   };
-  // Shape specific
   shapeType?: 'rect' | 'circle';
   color?: string;
-  // Common transform properties
   x: number;
   y: number;
   width: number;
   height: number;
-  rotation: number; // degrees
-  opacity: number; // 0 to 100
+  rotation: number;
+  opacity: number;
   flipH: boolean;
   flipV: boolean;
-  // Filters (for image layers)
   filters: FilterSettings;
-  // Text specific
   text?: string;
   fontSize?: number;
   fontFamily?: string;
@@ -116,8 +114,8 @@ interface ProjectConfig {
   id: string;
   name: string;
   description: string;
-  aspectRatio: string; // '16:9' | '1:1' | '1:1.41' | '9:16' | 'freeform'
-  ratioValue: number; // width / height
+  aspectRatio: string;
+  ratioValue: number;
   type: 'image' | 'document' | 'whiteboard';
   icon: React.ReactNode;
   accentColor: string;
@@ -127,6 +125,15 @@ interface DrawingPath {
   points: { x: number; y: number }[];
   color: string;
   brush: 'marker' | 'sketch' | 'bold' | 'paintbrush';
+}
+
+interface SavedProject {
+  id: string;
+  name: string;
+  timestamp: string;
+  layers: Layer[];
+  projectConfig: ProjectConfig;
+  canvasBgColor: string;
 }
 
 const DEFAULT_FILTERS: FilterSettings = {
@@ -234,15 +241,15 @@ const FONT_FAMILIES = [
 ];
 
 const WHITEBOARD_COLORS = [
-  '#ef4444', // Red
-  '#f97316', // Orange
-  '#eab308', // Yellow
-  '#22c55e', // Green
-  '#3b82f6', // Blue
-  '#a855f7', // Purple
-  '#ec4899', // Pink
-  '#ffffff', // White
-  '#000000', // Black
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#3b82f6',
+  '#a855f7',
+  '#ec4899',
+  '#ffffff',
+  '#000000',
 ];
 
 export default function PhotoEditor() {
@@ -250,9 +257,13 @@ export default function PhotoEditor() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   // Navigation & Routing State
-  const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'editor' | 'about'>('dashboard');
   const [dashboardSubView, setDashboardSubView] = useState<'home' | 'projects' | 'templates'>('home');
   const [activeProject, setActiveProject] = useState<ProjectConfig>(PROJECT_TEMPLATES[0]);
+
+  // Saved Projects State
+  const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Zoom Engine State
   const [zoom, setZoom] = useState<number>(100);
@@ -270,7 +281,7 @@ export default function PhotoEditor() {
   // Layer Engine State
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
-  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]); // Multi-select support
+  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [activeHandle, setActiveHandle] = useState<'tl' | 'tr' | 'bl' | 'br' | 'move' | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -322,7 +333,7 @@ export default function PhotoEditor() {
   // Meme Selector Modal State
   const [showMemeModal, setShowMemeModal] = useState(false);
 
-  // Accordion States for Right Panel (Restructured priority)
+  // Accordion States for Right Panel
   const [rightAccordion, setRightAccordion] = useState<{ [key: string]: boolean }>({
     filters: true,
     crop: true,
@@ -337,6 +348,28 @@ export default function PhotoEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inlineInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Handle URL query parameter for standalone About Us page
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('view') === 'about') {
+        setView('about');
+      }
+    }
+  }, []);
+
+  // Load Saved Projects from LocalStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('artisnap_saved_projects');
+    if (saved) {
+      try {
+        setSavedProjects(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load saved projects', e);
+      }
+    }
+  }, []);
 
   // Session Lifecycle (Auto-Save & Load)
   useEffect(() => {
@@ -364,6 +397,37 @@ export default function PhotoEditor() {
     };
   }, [layers]);
 
+  // Save Project Action
+  const handleSaveProject = () => {
+    const newProject: SavedProject = {
+      id: Date.now().toString(),
+      name: `${activeProject.name} Draft (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+      timestamp: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      layers: layers,
+      projectConfig: activeProject,
+      canvasBgColor: canvasBgColor
+    };
+
+    const updated = [newProject, ...savedProjects];
+    setSavedProjects(updated);
+    localStorage.setItem('artisnap_saved_projects', JSON.stringify(updated));
+
+    // Trigger Toast Alert
+    setToastMessage("Project Saved Successfully!");
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Load Saved Project
+  const handleLoadProject = (project: SavedProject) => {
+    setActiveProject(project.projectConfig);
+    setLayers(project.layers);
+    setCanvasBgColor(project.canvasBgColor);
+    setView('editor');
+    setSelectedLayerId(null);
+    setSelectedLayerIds([]);
+    setZoom(100);
+  };
+
   // Handle Project Selection from Dashboard
   const handleSelectProject = (project: ProjectConfig) => {
     setActiveProject(project);
@@ -380,7 +444,7 @@ export default function PhotoEditor() {
     setDrawingRedoStack([]);
 
     if (project.id === 'docs') {
-      setActiveLeftTab('texts'); // Focus Left Drawer on Typography inserts first
+      setActiveLeftTab('texts');
     } else if (project.type === 'whiteboard') {
       setActiveTool('draw');
       setActiveLeftTab('tools');
@@ -529,7 +593,7 @@ export default function PhotoEditor() {
       text = 'PASSIVE INCOME IDEAS';
       fontSize = 42;
       isBold = true;
-      color = '#facc15'; // Bold yellow
+      color = '#facc15';
     }
 
     const newLayer: Layer = {
@@ -595,7 +659,6 @@ export default function PhotoEditor() {
     setSelectedLayerId(newLayer.id);
     setSelectedLayerIds([newLayer.id]);
 
-    // Add to history
     setAddedShapesHistory((prev) => {
       const exists = prev.some((s) => s.type === shapeType && s.color === color);
       if (exists) return prev;
@@ -614,7 +677,7 @@ export default function PhotoEditor() {
       type: 'sticky',
       name: 'Sticky Note',
       text: 'Sticky Note Content',
-      color: '#fef08a', // Yellow sticky note
+      color: '#fef08a',
       warpMode: false,
       cropMode: false,
       corners: getInitialCorners(x, y, width, height),
@@ -726,7 +789,6 @@ export default function PhotoEditor() {
     setLayers(layers.map((l) => {
       if (l.id === selectedLayerId) {
         const updated = { ...l, ...updates };
-        // Keep corners in sync if position or size changes outside warp mode
         if (!updated.warpMode && (updates.x !== undefined || updates.y !== undefined || updates.width !== undefined || updates.height !== undefined)) {
           updated.corners = getInitialCorners(updated.x, updated.y, updated.width, updated.height);
         }
@@ -870,9 +932,7 @@ export default function PhotoEditor() {
     const h = img.naturalHeight || img.height;
     const { tl, tr, bl, br } = layer.corners;
 
-    // Triangle 1: Top-Left, Top-Right, Bottom-Left
     drawTriangle(ctx, img, 0, 0, w, 0, 0, h, tl.x, tl.y, tr.x, tr.y, bl.x, bl.y);
-    // Triangle 2: Top-Right, Bottom-Right, Bottom-Left
     drawTriangle(ctx, img, w, 0, w, h, 0, h, tr.x, tr.y, br.x, br.y, bl.x, bl.y);
   };
 
@@ -931,13 +991,11 @@ export default function PhotoEditor() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set high-res canvas dimensions based on aspect ratio
     const baseWidth = 1200;
     let baseHeight = activeProject.aspectRatio === 'freeform' 
       ? 800 
       : Math.round(baseWidth / activeProject.ratioValue);
 
-    // Document Mode Multi-Page Height Multiplier
     if (activeProject.id === 'docs') {
       baseHeight = baseHeight * docPages;
     }
@@ -945,11 +1003,9 @@ export default function PhotoEditor() {
     canvas.width = baseWidth;
     canvas.height = baseHeight;
 
-    // 1. Draw Clean Blank Base Canvas
     ctx.fillStyle = canvasBgColor;
     ctx.fillRect(0, 0, baseWidth, baseHeight);
 
-    // Draw page dividers for Document Mode with a prominent pixel gap margin
     if (activeProject.id === 'docs' && docPages > 1) {
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 4;
@@ -964,9 +1020,8 @@ export default function PhotoEditor() {
       ctx.setLineDash([]);
     }
 
-    // 2. Draw Grid if Whiteboard and perspective grid is active
     if (activeProject.type === 'whiteboard' && whiteboardStyle === 'grid') {
-      ctx.strokeStyle = theme === 'dark' ? '#3f3f46' : '#e4e4e7'; // light gray/dark gray grid
+      ctx.strokeStyle = theme === 'dark' ? '#3f3f46' : '#e4e4e7';
       ctx.lineWidth = 1;
       const gridSize = 40;
       for (let x = 0; x < baseWidth; x += gridSize) {
@@ -983,14 +1038,12 @@ export default function PhotoEditor() {
       }
     }
 
-    // 3. Draw Freehand Drawing Paths (Whiteboard Mode)
     drawingPaths.forEach((path) => {
       if (path.points.length < 2) return;
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = path.color;
       
-      // Set brush width based on profile
       let lineWidth = 4;
       if (path.brush === 'sketch') lineWidth = 2;
       if (path.brush === 'bold') lineWidth = 10;
@@ -1007,18 +1060,13 @@ export default function PhotoEditor() {
       ctx.restore();
     });
 
-    // 4. Draw Layers sequentially (z-index order)
     layers.forEach((layer) => {
-      // Skip rendering text layer on canvas if it is currently being edited inline
       if (layer.id === editingTextLayerId) return;
 
       ctx.save();
-      
-      // Apply global layer opacity
       ctx.globalAlpha = layer.opacity / 100;
 
       if ((layer.type === 'image' || layer.type === 'element') && layer.imgElement) {
-        // Apply filters
         ctx.filter = `
           brightness(${layer.filters.brightness}%) 
           contrast(${layer.filters.contrast}%) 
@@ -1028,10 +1076,8 @@ export default function PhotoEditor() {
         `;
 
         if (layer.warpMode) {
-          // Render with Perspective Warp
           drawWarpedImage(ctx, layer.imgElement, layer);
         } else {
-          // Standard Affine Transform
           const centerX = layer.x + layer.width / 2;
           const centerY = layer.y + layer.height / 2;
           ctx.translate(centerX, centerY);
@@ -1039,7 +1085,6 @@ export default function PhotoEditor() {
           ctx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
 
           if (layer.cropMode && cropBox) {
-            // Unconstrained Freeform Crop Engine
             ctx.drawImage(
               layer.imgElement,
               cropBox.x,
@@ -1062,7 +1107,6 @@ export default function PhotoEditor() {
           }
         }
       } else {
-        // Text, Shape, or Sticky Layers
         const centerX = layer.x + layer.width / 2;
         const centerY = layer.y + layer.height / 2;
         ctx.translate(centerX, centerY);
@@ -1072,7 +1116,6 @@ export default function PhotoEditor() {
         if (layer.type === 'text' && layer.text) {
           ctx.fillStyle = layer.color || '#000000';
           
-          // Build font string
           const fontStyle = layer.isItalic ? 'italic' : 'normal';
           const fontWeight = layer.isBold ? 'bold' : 'normal';
           ctx.font = `${fontStyle} ${fontWeight} ${layer.fontSize || 24}px ${layer.fontFamily || 'sans-serif'}`;
@@ -1081,7 +1124,6 @@ export default function PhotoEditor() {
           
           const displayText = layer.isUppercase ? layer.text.toUpperCase() : layer.text;
           
-          // Word-Wrap Enforcement
           const lines = wrapText(ctx, displayText, layer.width);
           const lineHeight = (layer.fontSize || 24) * 1.2;
           const totalHeight = lines.length * lineHeight;
@@ -1089,7 +1131,6 @@ export default function PhotoEditor() {
           lines.forEach((line, index) => {
             const yOffset = -totalHeight / 2 + index * lineHeight + lineHeight / 2;
             
-            // Apply letter spacing simulation
             if (layer.letterSpacing && layer.letterSpacing > 0) {
               const chars = line.split('');
               let currentX = 0;
@@ -1111,7 +1152,6 @@ export default function PhotoEditor() {
               ctx.fillText(line, 0, yOffset);
             }
 
-            // Underline & Strikethrough simulation
             const textWidth = ctx.measureText(line).width;
             if (layer.isUnderline) {
               ctx.beginPath();
@@ -1131,11 +1171,9 @@ export default function PhotoEditor() {
             }
           });
         } else if (layer.type === 'sticky') {
-          // Draw sticky note background
           ctx.fillStyle = layer.color || '#fef08a';
           ctx.fillRect(-layer.width / 2, -layer.height / 2, layer.width, layer.height);
           
-          // Draw sticky note text
           ctx.fillStyle = '#1c1917';
           ctx.font = `16px sans-serif`;
           ctx.textAlign = 'center';
@@ -1155,15 +1193,13 @@ export default function PhotoEditor() {
 
       ctx.restore();
 
-      // Draw selection bounding box & corner handles if active
       const isSelected = selectedLayerIds.includes(layer.id) || layer.id === selectedLayerId;
       if (isSelected) {
         ctx.save();
-        ctx.strokeStyle = '#ec4899'; // Neon pink selection border
+        ctx.strokeStyle = '#ec4899';
         ctx.lineWidth = 2.5;
         
         if (layer.warpMode) {
-          // Draw warped quad outline
           ctx.beginPath();
           ctx.moveTo(layer.corners.tl.x, layer.corners.tl.y);
           ctx.lineTo(layer.corners.tr.x, layer.corners.tr.y);
@@ -1172,7 +1208,6 @@ export default function PhotoEditor() {
           ctx.closePath();
           ctx.stroke();
 
-          // Draw neon pink corner handles
           ctx.fillStyle = '#ec4899';
           const hSize = 12;
           const drawHandle = (c: Corner) => {
@@ -1186,7 +1221,6 @@ export default function PhotoEditor() {
           drawHandle(layer.corners.bl);
           drawHandle(layer.corners.br);
         } else {
-          // Standard bounding box
           ctx.setLineDash([6, 4]);
           const centerX = layer.x + layer.width / 2;
           const centerY = layer.y + layer.height / 2;
@@ -1195,7 +1229,6 @@ export default function PhotoEditor() {
           
           ctx.strokeRect(-layer.width / 2 - 4, -layer.height / 2 - 4, layer.width + 8, layer.height + 8);
           
-          // Draw corner handles
           ctx.fillStyle = '#ec4899';
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 1.5;
@@ -1217,10 +1250,9 @@ export default function PhotoEditor() {
       }
     });
 
-    // Draw Rubber-band selection box if active
     if (isRubberBanding) {
       ctx.save();
-      ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'; // Indigo
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
       ctx.fillStyle = 'rgba(99, 102, 241, 0.15)';
       ctx.lineWidth = 1.5;
       const rx = Math.min(rubberBandStart.x, rubberBandCurrent.x);
@@ -1233,7 +1265,7 @@ export default function PhotoEditor() {
     }
   }, [view, activeProject, layers, selectedLayerId, selectedLayerIds, canvasBgColor, isRubberBanding, rubberBandStart, rubberBandCurrent, cropBox, docPages, drawingPaths, editingTextLayerId, whiteboardStyle, theme]);
 
-  // Global Window Dragging & Mouse Up Listeners to prevent stuck dragging outside canvas
+  // Global Window Dragging & Mouse Up Listeners
   useEffect(() => {
     if (!isDragging || !selectedLayerId || !activeHandle) return;
 
@@ -1254,7 +1286,6 @@ export default function PhotoEditor() {
       if (!layer) return;
 
       if (layer.warpMode) {
-        // Perspective Warp Mode: Drag individual corners independently
         if (activeHandle === 'move') {
           updateSelectedLayer({
             corners: {
@@ -1273,14 +1304,12 @@ export default function PhotoEditor() {
           updateSelectedLayer({ corners: updatedCorners });
         }
       } else {
-        // Standard Uniform Scaling Mode
         if (activeHandle === 'move') {
           updateSelectedLayer({
             x: Math.round(layerStartPos.x + dx),
             y: Math.round(layerStartPos.y + dy),
           });
         } else {
-          // Balanced Bi-Directional Font Scaling Fix (Outward & Inward)
           const originalRatio = layerStartSize.width / layerStartSize.height;
           let newWidth = layerStartSize.width;
           let newHeight = layerStartSize.height;
@@ -1352,7 +1381,7 @@ export default function PhotoEditor() {
     };
   }, [isDragging, selectedLayerId, activeHandle, dragStart, layers, layerStartCorners, layerStartPos, layerStartSize, layerStartFontSize]);
 
-  // Global Window Listeners for Rubber-band selection to prevent hold glitch and out-of-canvas issues
+  // Global Window Listeners for Rubber-band selection
   useEffect(() => {
     if (!isRubberBanding) return;
 
@@ -1364,7 +1393,6 @@ export default function PhotoEditor() {
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
 
-      // Clamp coordinates to canvas boundaries to prevent drawing rubber-band outside the canvas
       let currentX = (e.clientX - rect.left) * scaleX;
       let currentY = (e.clientY - rect.top) * scaleY;
 
@@ -1382,7 +1410,6 @@ export default function PhotoEditor() {
       const rw = Math.abs(rubberBandStart.x - rubberBandCurrent.x);
       const rh = Math.abs(rubberBandStart.y - rubberBandCurrent.y);
 
-      // Find all layers intersecting with the rubber-band box
       const selected = layers.filter((layer) => {
         const layerMaxX = layer.x + layer.width;
         const layerMaxY = layer.y + layer.height;
@@ -1420,7 +1447,6 @@ export default function PhotoEditor() {
     const clickX = (e.clientX - rect.left) * scaleX;
     const clickY = (e.clientY - rect.top) * scaleY;
 
-    // If drawing mode is active, handle drawing path creation with exact geometric tip mapping
     if (activeTool === 'draw') {
       setIsDrawingOnCanvas(true);
       const newPath: DrawingPath = {
@@ -1432,11 +1458,10 @@ export default function PhotoEditor() {
       return;
     }
 
-    // 1. Check if clicked on a corner handle of the currently selected layer
     if (selectedLayerId) {
       const layer = layers.find((l) => l.id === selectedLayerId);
       if (layer) {
-        const handleRadius = 18; // Click tolerance
+        const handleRadius = 18;
         
         if (layer.warpMode) {
           const dist = (p1: Corner, p2: { x: number; y: number }) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
@@ -1469,7 +1494,6 @@ export default function PhotoEditor() {
             return;
           }
         } else {
-          // Standard bounding box corner detection
           const cx = layer.x + layer.width / 2;
           const cy = layer.y + layer.height / 2;
           const rad = (layer.rotation * Math.PI) / 180;
@@ -1530,7 +1554,6 @@ export default function PhotoEditor() {
       }
     }
 
-    // 2. Check if clicked inside any layer to move it
     let foundLayerId: string | null = null;
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i];
@@ -1568,7 +1591,6 @@ export default function PhotoEditor() {
       setSelectedLayerId(foundLayerId);
       setSelectedLayerIds([foundLayerId]);
     } else {
-      // Start Rubber-band multi-select if clicked on empty canvas space
       setIsRubberBanding(true);
       setRubberBandStart({ x: clickX, y: clickY });
       setRubberBandCurrent({ x: clickX, y: clickY });
@@ -1595,7 +1617,6 @@ export default function PhotoEditor() {
     setDrawingPaths(updatedPaths);
   };
 
-  // Mouse Hold Pen Glitch Fix: Release click outside canvas boundaries or shift focus immediately kills active drawing stream
   const handleCanvasMouseUp = () => {
     if (activeTool === 'draw') {
       setIsDrawingOnCanvas(false);
@@ -1619,7 +1640,6 @@ export default function PhotoEditor() {
     const clickX = (e.clientX - rect.left) * scaleX;
     const clickY = (e.clientY - rect.top) * scaleY;
 
-    // Find if double clicked on a text layer
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i];
       if (layer.type === 'text') {
@@ -1651,13 +1671,11 @@ export default function PhotoEditor() {
       }
       if (isFullscreenPresentation) {
         if (e.key === 'ArrowRight') {
-          // Advance forward
           if (activeSlideIndex < slides.length - 1) {
             selectSlide(activeSlideIndex + 1);
           }
         }
         if (e.key === 'ArrowLeft') {
-          // Shift backward
           if (activeSlideIndex > 0) {
             selectSlide(activeSlideIndex - 1);
           }
@@ -1668,7 +1686,6 @@ export default function PhotoEditor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreenPresentation, activeSlideIndex, slides, layers]);
 
-  // Listen to native fullscreen change to restore UI if exited via Escape key
   useEffect(() => {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) {
@@ -1684,7 +1701,6 @@ export default function PhotoEditor() {
   // Handle Canvas Click to add floating text at exact coordinates
   const handleCanvasClickForText = (e: React.MouseEvent<HTMLDivElement>) => {
     if (activeTool !== 'pointer') return;
-    // Only trigger if clicking the container background directly
     if (e.target !== e.currentTarget) return;
 
     const canvas = canvasRef.current;
@@ -1696,9 +1712,79 @@ export default function PhotoEditor() {
     const clickX = (e.clientX - rect.left) * scaleX;
     const clickY = (e.clientY - rect.top) * scaleY;
 
-    // Add text layer at exact click coordinates
     addTextLayer('body', clickX - 175, clickY - 40);
   };
+
+  // Standalone About Us Page View
+  if (view === 'about') {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center p-8 relative transition-colors duration-300 ${
+        theme === 'dark' 
+          ? 'bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100' 
+          : 'bg-gradient-to-b from-zinc-50 via-white to-zinc-100 text-zinc-900'
+      }`}>
+        <div className="absolute top-4 right-4">
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className={`p-2.5 rounded-lg border transition-all ${
+              theme === 'dark' 
+                ? 'bg-zinc-800/60 border-zinc-700 text-yellow-400 hover:bg-zinc-700' 
+                : 'bg-zinc-100 border-zinc-300 text-indigo-600 hover:bg-zinc-200'
+            }`}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+        </div>
+
+        <div className={`max-w-3xl w-full p-10 rounded-3xl border backdrop-blur-xl shadow-2xl transition-all ${
+          theme === 'dark' 
+            ? 'bg-zinc-900/60 border-zinc-800/80 shadow-indigo-500/5' 
+            : 'bg-white/80 border-zinc-200 shadow-zinc-300/50'
+        }`}>
+          <div className="flex items-center gap-3 mb-8">
+            <div className="p-3 bg-indigo-600 rounded-xl text-white shadow-lg shadow-indigo-500/20">
+              <Sparkles className="w-8 h-8" />
+            </div>
+            <h1 className="text-4xl font-black tracking-tight bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
+              Artisnap
+            </h1>
+          </div>
+
+          <div className="prose prose-indigo dark:prose-invert max-w-none space-y-6">
+            <h2 className="text-2xl font-bold border-b pb-2 border-zinc-800">About Artisnap</h2>
+            <h3 className="text-lg font-semibold text-indigo-400">Welcome to the Future of Cloud-Based Content Design</h3>
+            
+            <p className="leading-relaxed">
+              Artisnap was built for modern creators who are tired of heavy, slow, and overly complicated design applications. We believe that photo editing, document formatting, presentation building, and freeform wireframing shouldn't require five different subscriptions or an advanced degree in software layout.
+            </p>
+
+            <h4 className="text-md font-bold text-indigo-400 uppercase tracking-wider">Our Mission: Click, Edit, Done.</h4>
+            <p className="leading-relaxed">
+              Artisnap bridges the gap between chaotic multi-tool suites and rigid template apps. By engineering an unconstrained, hardware-accelerated web canvas, we give you pixel-perfect accuracy for high-speed content delivery. From striking YouTube thumbnails and high-conversion Instagram posts to crisp multi-page business documents and presentation decks, Artisnap houses it all inside a centralized interface.
+            </p>
+
+            <h4 className="text-md font-bold text-indigo-400 uppercase tracking-wider">Core Structural Tenets</h4>
+            <ul className="list-disc pl-5 space-y-2">
+              <li><strong>Unified Tool Engine:</strong> Instantly shift layout presets while keeping your asset layers intact.</li>
+              <li><strong>Hardware Isolation:</strong> Zoom, drag, crop, and transform complex design elements with dedicated canvas optimization that never slows down your system UI.</li>
+              <li><strong>Secure Local Archiving:</strong> Your art belongs to you. Every draft, edit, and imported layer is continuously auto-saved directly inside your browser cache.</li>
+            </ul>
+
+            <div className="mt-10 pt-6 border-t border-zinc-800/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <p className="text-xs text-zinc-500 uppercase tracking-widest">Lead Coder</p>
+                <p className="text-sm font-bold text-indigo-400">Divyansh</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500 uppercase tracking-widest">Lead Frontend</p>
+                <p className="text-sm font-bold text-indigo-400">Varun</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex flex-col h-screen overflow-hidden relative text-sm md:text-base transition-colors duration-300 ${
@@ -1716,17 +1802,25 @@ export default function PhotoEditor() {
           background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-          background: ${theme === 'dark' ? '#27272a' : '#d4d4d8'};
+          background: ${theme === 'dark' ? '#1e1b4b' : '#4f46e5'};
           border-radius: 9999px;
         }
         ::-webkit-scrollbar-thumb:hover {
-          background: ${theme === 'dark' ? '#3f3f46' : '#a1a1aa'};
+          background: ${theme === 'dark' ? '#312e81' : '#4338ca'};
         }
       `}</style>
 
       {/* Ambient Background Glows */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-pink-500/5 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-2 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-2xl animate-bounce">
+          <CheckCircle className="w-5 h-5" />
+          <span className="font-bold text-sm">{toastMessage}</span>
+        </div>
+      )}
 
       {/* Header - Hidden completely in full-screen presentation mode */}
       {!isFullscreenPresentation && (
@@ -1744,6 +1838,20 @@ export default function PhotoEditor() {
               <p className={`text-xs hidden sm:block ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>Premium Creative Suite</p>
             </div>
           </div>
+
+          {/* Save Button at Top-Left of Editor Workspace */}
+          {view === 'editor' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSaveProject}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-lg shadow-indigo-600/20 transition-all"
+                title="Save Project"
+              >
+                <Save className="w-4 h-4" />
+                Save
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-4">
             {/* Theme Toggle */}
@@ -1821,13 +1929,59 @@ export default function PhotoEditor() {
             />
           </div>
 
+          {/* Floating Capsule Top Header */}
+          <div className="w-full flex justify-center pt-6 z-20">
+            <div className={`flex items-center gap-6 px-8 py-3 rounded-full border backdrop-blur-md transition-colors ${
+              theme === 'dark' ? 'bg-zinc-900/90 border-zinc-800/80 shadow-2xl' : 'bg-white/90 border-zinc-200 shadow-lg'
+            }`}>
+              <button
+                onClick={() => {
+                  setDashboardSubView('home');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className={`text-xs font-bold uppercase tracking-wider transition-all ${
+                  dashboardSubView === 'home' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
+                }`}
+              >
+                Home
+              </button>
+              <div className={`h-4 w-[1px] ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
+              <button
+                onClick={() => setDashboardSubView('projects')}
+                className={`text-xs font-bold uppercase tracking-wider transition-all ${
+                  dashboardSubView === 'projects' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
+                }`}
+              >
+                Projects
+              </button>
+              <div className={`h-4 w-[1px] ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
+              <button
+                onClick={() => setDashboardSubView('templates')}
+                className={`text-xs font-bold uppercase tracking-wider transition-all ${
+                  dashboardSubView === 'templates' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
+                }`}
+              >
+                Templates
+              </button>
+              <div className={`h-4 w-[1px] ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
+              <a
+                href="?view=about"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-zinc-900 transition-all"
+              >
+                About Us
+              </a>
+            </div>
+          </div>
+
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col justify-center items-center p-8 max-w-7xl mx-auto w-full z-10">
             
             {dashboardSubView === 'home' && (
               <div className="text-center mb-12 w-full">
                 {/* Modernized Retro Hero Header */}
-                <h1 className="text-6xl md:text-8xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 drop-shadow-[0_6px_0_#06b6d4] uppercase font-mono mb-4 relative inline-block">
+                <h1 className="text-6xl md:text-8xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 drop-shadow-[0_6px_0_rgba(6,182,212,0.8)] uppercase font-mono mb-4 relative inline-block filter drop-shadow-[0_0_15px_rgba(99,102,241,0.5)]">
                   Artisnap
                   <span className="animate-pulse text-indigo-400">_</span>
                 </h1>
@@ -1838,36 +1992,78 @@ export default function PhotoEditor() {
                 </p>
 
                 {/* Compact Single-Row Navigation */}
-                <div className={`flex flex-wrap justify-center gap-4 max-w-5xl mx-auto p-4 rounded-2xl border backdrop-blur-md transition-colors ${
+                <div className={`flex flex-row justify-center gap-2 max-w-5xl mx-auto p-2 rounded-2xl border backdrop-blur-md transition-colors overflow-x-auto ${
                   theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-100/60 border-zinc-200'
                 }`}>
                   {PROJECT_TEMPLATES.map((project) => (
                     <div
                       key={project.id}
                       onClick={() => handleSelectProject(project)}
-                      className={`group relative p-4 rounded-xl border hover:border-indigo-500/50 transition-all duration-300 cursor-pointer flex items-center gap-3 shadow-lg flex-1 min-w-[180px] ${
+                      className={`group relative p-3 rounded-xl border hover:border-indigo-500/50 transition-all duration-300 cursor-pointer flex items-center gap-2 shadow-lg flex-1 min-w-[140px] ${
                         theme === 'dark' 
                           ? 'bg-zinc-950/60 border-zinc-800/60 hover:bg-zinc-900/80 text-zinc-100' 
                           : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-900'
                       }`}
                     >
-                      <div className={`p-2 rounded-lg group-hover:scale-110 transition-transform ${
+                      <div className={`p-1.5 rounded-lg group-hover:scale-110 transition-transform ${
                         theme === 'dark' ? 'bg-zinc-800/60' : 'bg-zinc-200/60'
                       }`}>
                         {project.icon}
                       </div>
                       <div className="text-left">
-                        <h3 className={`text-xs font-bold transition-colors ${
+                        <h3 className={`text-[11px] font-bold transition-colors ${
                           theme === 'dark' ? 'text-zinc-100 group-hover:text-indigo-300' : 'text-zinc-800 group-hover:text-indigo-600'
                         }`}>
                           {project.name}
                         </h3>
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
+                        <span className="text-[9px] text-zinc-500 uppercase tracking-wider">
                           {project.aspectRatio}
                         </span>
                       </div>
                     </div>
                   ))}
+                </div>
+
+                {/* Saved Projects Display Shelf */}
+                <div className="mt-12 text-left w-full max-w-5xl mx-auto">
+                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <Folder className="w-5 h-5 text-indigo-400" />
+                    Saved Projects Shelf
+                  </h2>
+                  {savedProjects.length === 0 ? (
+                    <div className={`p-8 text-center border border-dashed rounded-2xl text-xs text-zinc-500 ${
+                      theme === 'dark' ? 'bg-zinc-950/40 border-zinc-800' : 'bg-zinc-100/40 border-zinc-200'
+                    }`}>
+                      No saved projects found. Click "Save" inside the editor to populate this shelf.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {savedProjects.map((proj) => (
+                        <div
+                          key={proj.id}
+                          onClick={() => handleLoadProject(proj)}
+                          className={`p-4 rounded-xl border hover:border-indigo-500 transition-all cursor-pointer flex flex-col justify-between ${
+                            theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+                              {proj.projectConfig.icon}
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-xs truncate max-w-[180px]">{proj.name}</h3>
+                              <p className="text-[10px] text-zinc-500">{proj.timestamp}</p>
+                            </div>
+                          </div>
+                          <div className={`h-20 rounded-lg flex items-center justify-center text-[10px] font-bold uppercase tracking-wider ${
+                            theme === 'dark' ? 'bg-zinc-950 text-zinc-600' : 'bg-zinc-100 text-zinc-400'
+                          }`}>
+                            {proj.projectConfig.aspectRatio} Canvas
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1879,7 +2075,6 @@ export default function PhotoEditor() {
                   Recent Edits
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Mock Recent Project Cards */}
                   <div className={`p-4 rounded-xl border hover:border-indigo-500 transition-all cursor-pointer ${
                     theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
                   }`}>
@@ -1977,40 +2172,6 @@ export default function PhotoEditor() {
               </div>
             )}
 
-          </div>
-
-          {/* Floating Navigational Capsule Footer */}
-          <div className="w-full flex justify-center pb-8 z-10">
-            <div className={`flex items-center gap-6 px-8 py-3 rounded-full border backdrop-blur-md transition-colors ${
-              theme === 'dark' ? 'bg-zinc-900/90 border-zinc-800/80 shadow-2xl' : 'bg-white/90 border-zinc-200 shadow-lg'
-            }`}>
-              <button
-                onClick={() => setDashboardSubView('home')}
-                className={`text-xs font-bold uppercase tracking-wider transition-all ${
-                  dashboardSubView === 'home' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
-                }`}
-              >
-                Home
-              </button>
-              <div className={`h-4 w-[1px] ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
-              <button
-                onClick={() => setDashboardSubView('projects')}
-                className={`text-xs font-bold uppercase tracking-wider transition-all ${
-                  dashboardSubView === 'projects' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
-                }`}
-              >
-                Projects
-              </button>
-              <div className={`h-4 w-[1px] ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
-              <button
-                onClick={() => setDashboardSubView('templates')}
-                className={`text-xs font-bold uppercase tracking-wider transition-all ${
-                  dashboardSubView === 'templates' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
-                }`}
-              >
-                Templates
-              </button>
-            </div>
           </div>
 
         </div>
@@ -2935,7 +3096,7 @@ export default function PhotoEditor() {
                         </h2>
                       </div>
 
-                      {/* [TOP OF RIGHT PANEL]: Rotation, Duplicate, Flip, and Crop/Warp Split Modules */}
+                      {/* [TOP HOUSING]: Canvas Axis Rotation, Duplicate, Flips, and Crop/Warp */}
                       
                       {/* Rotation Module */}
                       <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
@@ -3056,7 +3217,6 @@ export default function PhotoEditor() {
                                 </button>
                               </div>
 
-                              {/* Unconstrained Freeform Crop Engine */}
                               <div className={`flex flex-col border-t pt-3 gap-2 ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                                 <div className="flex items-center justify-between">
                                   <div>
@@ -3117,7 +3277,7 @@ export default function PhotoEditor() {
                         </div>
                       )}
 
-                      {/* Typography & Text Box (High Priority for Text Layers) */}
+                      {/* Typography & Text Box */}
                       {selectedLayer.type === 'text' && (
                         <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
                           theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
@@ -3186,7 +3346,7 @@ export default function PhotoEditor() {
                         </div>
                       )}
 
-                      {/* [BOTTOM OF RIGHT PANEL]: Advanced color filtering adjustments, sliders, and opacity presets */}
+                      {/* [BOTTOM HOUSING]: Advanced Color Filters & Opacity */}
                       
                       {/* Opacity & Layer Alpha */}
                       <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
@@ -3230,7 +3390,6 @@ export default function PhotoEditor() {
                         </button>
                         {rightAccordion.filters && (
                           <div className={`p-4 border-t space-y-4 ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
-                            {/* Brightness */}
                             <div className="space-y-1">
                               <div className="flex justify-between text-xs">
                                 <span className="text-zinc-400">Brightness</span>
@@ -3243,7 +3402,6 @@ export default function PhotoEditor() {
                               />
                             </div>
 
-                            {/* Contrast */}
                             <div className="space-y-1">
                               <div className="flex justify-between text-xs">
                                 <span className="text-zinc-400">Contrast</span>
@@ -3256,7 +3414,6 @@ export default function PhotoEditor() {
                               />
                             </div>
 
-                            {/* Saturation */}
                             <div className="space-y-1">
                               <div className="flex justify-between text-xs">
                                 <span className="text-zinc-400">Saturation</span>
@@ -3269,7 +3426,6 @@ export default function PhotoEditor() {
                               />
                             </div>
 
-                            {/* Hue Rotate */}
                             <div className="space-y-1">
                               <div className="flex justify-between text-xs">
                                 <span className="text-zinc-400">Hue Rotate</span>
@@ -3282,7 +3438,6 @@ export default function PhotoEditor() {
                               />
                             </div>
 
-                            {/* Gamma Correction */}
                             <div className="space-y-1">
                               <div className="flex justify-between text-xs">
                                 <span className="text-zinc-400">Gamma Correction</span>
