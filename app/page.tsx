@@ -255,6 +255,9 @@ export default function PhotoEditor() {
     br: { x: 0, y: 0 },
   });
 
+  // Derived active layer helper
+  const selectedLayer = layers.find((l) => l.id === selectedLayerId) || null;
+
   // Multi-select rubber-band state
   const [isRubberBanding, setIsRubberBanding] = useState(false);
   const [rubberBandStart, setRubberBandStart] = useState({ x: 0, y: 0 });
@@ -672,6 +675,25 @@ export default function PhotoEditor() {
     setDocPages(1);
     setSlides([{ id: 'slide-1', layers: [], transition: 'fade' }]);
     setActiveSlideIndex(0);
+  };
+
+  // Export Canvas to PNG
+  const handleExport = () => {
+    if (!canvasRef.current) return;
+    const dataUrl = canvasRef.current.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = `${activeProject.name.toLowerCase().replace(/\s+/g, '-')}-export.png`;
+    link.href = dataUrl;
+    link.click();
+  };
+
+  // Handle Wheel Zoom
+  const handleWheelZoom = (e: React.WheelEvent) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const zoomStep = e.deltaY < 0 ? 10 : -10;
+      setZoom((prev) => Math.max(25, Math.min(300, prev + zoomStep)));
+    }
   };
 
   // Affine Triangle Texture Mapper for Perspective Warp
