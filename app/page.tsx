@@ -817,6 +817,16 @@ export default function PhotoEditor() {
     setActiveHandle(null);
   };
 
+  // Export final canvas
+  const handleExport = () => {
+    if (!canvasRef.current) return;
+    const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.95);
+    const link = document.createElement('a');
+    link.download = `pixelcraft_${activeProject.id}_export.jpg`;
+    link.href = dataUrl;
+    link.click();
+  };
+
   const selectedLayer = layers.find((l) => l.id === selectedLayerId);
 
   return (
