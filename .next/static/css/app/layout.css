@@ -571,6 +571,39 @@ video {
 [hidden]:where(:not([hidden="until-found"])) {
   display: none;
 }
+.container {
+  width: 100%;
+}
+@media (min-width: 640px) {
+
+  .container {
+    max-width: 640px;
+  }
+}
+@media (min-width: 768px) {
+
+  .container {
+    max-width: 768px;
+  }
+}
+@media (min-width: 1024px) {
+
+  .container {
+    max-width: 1024px;
+  }
+}
+@media (min-width: 1280px) {
+
+  .container {
+    max-width: 1280px;
+  }
+}
+@media (min-width: 1536px) {
+
+  .container {
+    max-width: 1536px;
+  }
+}
 .pointer-events-none {
   pointer-events: none;
 }
@@ -618,6 +651,9 @@ video {
 }
 .top-0 {
   top: 0px;
+}
+.left-28 {
+  left: 7rem;
 }
 .z-10 {
   z-index: 10;
@@ -667,6 +703,9 @@ video {
 }
 .block {
   display: block;
+}
+.inline {
+  display: inline;
 }
 .flex {
   display: flex;
@@ -721,6 +760,9 @@ video {
 }
 .h-screen {
   height: 100vh;
+}
+.h-10 {
+  height: 2.5rem;
 }
 .max-h-40 {
   max-height: 10rem;
@@ -822,6 +864,9 @@ video {
 }
 .cursor-pointer {
   cursor: pointer;
+}
+.resize-none {
+  resize: none;
 }
 .appearance-none {
   -webkit-appearance: none;
@@ -1086,6 +1131,10 @@ video {
 .bg-zinc-950\/40 {
   background-color: rgb(9 9 11 / 0.4);
 }
+.bg-white {
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
+}
 .bg-gradient-to-b {
   background-image: linear-gradient(to bottom, var(--tw-gradient-stops));
 }
@@ -1278,6 +1327,9 @@ video {
 }
 .pt-4 {
   padding-top: 1rem;
+}
+.pr-3 {
+  padding-right: 0.75rem;
 }
 .text-left {
   text-align: left;
@@ -1502,6 +1554,9 @@ video {
 }
 .ring-indigo-500\/30 {
   --tw-ring-color: rgb(99 102 241 / 0.3);
+}
+.ring-indigo-500\/50 {
+  --tw-ring-color: rgb(99 102 241 / 0.5);
 }
 .blur {
   --tw-blur: blur(8px);
