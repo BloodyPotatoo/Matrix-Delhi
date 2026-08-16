@@ -1136,7 +1136,7 @@ export default function PhotoEditor() {
           const fontStyle = layer.isItalic ? 'italic' : 'normal';
           const fontWeight = layer.isBold ? 'bold' : 'normal';
           ctx.font = `${fontStyle} ${fontWeight} ${layer.fontSize || 24}px ${layer.fontFamily || 'sans-serif'}`;
-          ctx.textAlign = layer.textAlign || 'center';
+          ctx.textAlign = layer.textAlign === 'justify' ? 'left' : (layer.textAlign || 'center');
           ctx.textBaseline = 'middle';
           
           const displayText = layer.isUppercase ? layer.text.toUpperCase() : layer.text;
