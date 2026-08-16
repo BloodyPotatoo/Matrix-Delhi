@@ -85,7 +85,6 @@ interface Layer {
     tl: Corner;
     tr: Corner;
     bl: Corner;
-    br: Corner;
   };
   shapeType?: 'rect' | 'circle';
   color?: string;
@@ -197,6 +196,23 @@ const PROJECT_TEMPLATES: ProjectConfig[] = [
     accentColor: 'from-amber-500 to-orange-500',
   },
 ];
+
+const getProjectIcon = (id: string) => {
+  switch (id) {
+    case 'thumbnail':
+      return <Sparkles className="w-5 h-5 text-pink-400" />;
+    case 'instagram':
+      return <ImageIcon className="w-5 h-5 text-indigo-400" />;
+    case 'docs':
+      return <FileText className="w-5 h-5 text-emerald-400" />;
+    case 'presentation':
+      return <Layout className="w-5 h-5 text-cyan-400" />;
+    case 'whiteboard':
+      return <Palette className="w-5 h-5 text-amber-400" />;
+    default:
+      return <Sparkles className="w-5 h-5 text-pink-400" />;
+  }
+};
 
 const MEME_TEMPLATES = [
   {
@@ -2037,7 +2053,7 @@ export default function PhotoEditor() {
                       <div className={`p-1.5 rounded-lg group-hover:scale-110 transition-transform ${
                         theme === 'dark' ? 'bg-zinc-800/60' : 'bg-zinc-200/60'
                       }`}>
-                        {project.icon}
+                        {getProjectIcon(project.id)}
                       </div>
                       <div className="text-left">
                         <h3 className={`text-[11px] font-bold transition-colors ${
@@ -2077,7 +2093,7 @@ export default function PhotoEditor() {
                         >
                           <div className="flex items-center gap-3 mb-3">
                             <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
-                              {proj.projectConfig.icon}
+                              {getProjectIcon(proj.projectConfig.id)}
                             </div>
                             <div>
                               <h3 className="font-bold text-xs truncate max-w-[180px]">{proj.name}</h3>
