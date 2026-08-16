@@ -85,6 +85,7 @@ interface Layer {
     tl: Corner;
     tr: Corner;
     bl: Corner;
+    br: Corner;
   };
   shapeType?: 'rect' | 'circle';
   color?: string;
