@@ -46,7 +46,8 @@ import {
   MousePointer,
   PenTool,
   Crop,
-  Play
+  Play,
+  Copy
 } from 'lucide-react';
 
 // Types & Interfaces
@@ -116,6 +117,12 @@ interface ProjectConfig {
   type: 'image' | 'document' | 'whiteboard';
   icon: React.ReactNode;
   accentColor: string;
+}
+
+interface DrawingPath {
+  points: { x: number; y: number }[];
+  color: string;
+  brush: 'marker' | 'sketch' | 'bold' | 'paintbrush';
 }
 
 const DEFAULT_FILTERS: FilterSettings = {
@@ -222,6 +229,18 @@ const FONT_FAMILIES = [
   'Comic Sans MS'
 ];
 
+const WHITEBOARD_COLORS = [
+  '#ef4444', // Red
+  '#f97316', // Orange
+  '#eab308', // Yellow
+  '#22c55e', // Green
+  '#3b82f6', // Blue
+  '#a855f7', // Purple
+  '#ec4899', // Pink
+  '#ffffff', // White
+  '#000000', // Black
+];
+
 export default function PhotoEditor() {
   // Navigation & Routing State
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
@@ -248,12 +267,25 @@ export default function PhotoEditor() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [layerStartPos, setLayerStartPos] = useState({ x: 0, y: 0 });
   const [layerStartSize, setLayerStartSize] = useState({ width: 0, height: 0 });
+  const [layerStartFontSize, setLayerStartFontSize] = useState<number>(24);
   const [layerStartCorners, setLayerStartCorners] = useState({
     tl: { x: 0, y: 0 },
     tr: { x: 0, y: 0 },
     bl: { x: 0, y: 0 },
     br: { x: 0, y: 0 },
   });
+
+  // Inline Text Editing State
+  const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
+  const [editingTextValue, setEditingTextValue] = useState<string>('');
+
+  // Whiteboard Drawing State
+  const [drawingPaths, setDrawingPaths] = useState<DrawingPath[]>([]);
+  const [drawingUndoStack, setDrawingUndoStack] = useState<DrawingPath[][]>([]);
+  const [drawingRedoStack, setDrawingRedoStack] = useState<DrawingPath[][]>([]);
+  const [isDrawingOnCanvas, setIsDrawingOnCanvas] = useState(false);
+  const [activeBrush, setActiveBrush] = useState<'marker' | 'sketch' | 'bold' | 'paintbrush'>('marker');
+  const [activeBrushColor, setActiveBrushColor] = useState<string>('#ef4444');
 
   // Derived active layer helper
   const selectedLayer = layers.find((l) => l.id === selectedLayerId) || null;
@@ -285,7 +317,7 @@ export default function PhotoEditor() {
     filters: true,
     crop: true,
     rotation: true,
-    opacity: false,
+    opacity: true,
     text: true,
   });
 
@@ -294,6 +326,7 @@ export default function PhotoEditor() {
   const bulkUploadInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inlineInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Handle Project Selection from Dashboard
   const handleSelectProject = (project: ProjectConfig) => {
@@ -306,9 +339,15 @@ export default function PhotoEditor() {
     setDocPages(1);
     setSlides([{ id: 'slide-1', layers: [], transition: 'fade' }]);
     setActiveSlideIndex(0);
+    setDrawingPaths([]);
+    setDrawingUndoStack([]);
+    setDrawingRedoStack([]);
 
     if (project.id === 'docs') {
       setActiveLeftTab('texts'); // Focus Left Drawer on Typography inserts first
+    } else if (project.type === 'whiteboard') {
+      setActiveTool('draw');
+      setActiveLeftTab('tools');
     } else {
       setActiveLeftTab('templates');
     }
@@ -425,9 +464,9 @@ export default function PhotoEditor() {
   };
 
   // Add Text Layer
-  const addTextLayer = (presetType?: 'heading' | 'bold' | 'semibold' | 'body' | 'passive') => {
-    const x = 150;
-    const y = 150 + layers.length * 20;
+  const addTextLayer = (presetType?: 'heading' | 'bold' | 'semibold' | 'body' | 'passive', customX?: number, customY?: number) => {
+    const x = customX !== undefined ? customX : 150;
+    const y = customY !== undefined ? customY : (150 + layers.length * 20);
     const width = 350;
     const height = 80;
     
@@ -599,6 +638,22 @@ export default function PhotoEditor() {
     };
   };
 
+  // Duplicate Selected Layer
+  const duplicateLayer = () => {
+    if (!selectedLayer) return;
+    const newLayer: Layer = {
+      ...selectedLayer,
+      id: Date.now().toString(),
+      name: `${selectedLayer.name} (Copy)`,
+      x: selectedLayer.x + 30,
+      y: selectedLayer.y + 30,
+      corners: getInitialCorners(selectedLayer.x + 30, selectedLayer.y + 30, selectedLayer.width, selectedLayer.height),
+    };
+    setLayers((prev) => [...prev, newLayer]);
+    setSelectedLayerId(newLayer.id);
+    setSelectedLayerIds([newLayer.id]);
+  };
+
   // Layer Stacking Order (z-index)
   const moveLayer = (direction: 'up' | 'down') => {
     if (!selectedLayerId) return;
@@ -675,6 +730,9 @@ export default function PhotoEditor() {
     setDocPages(1);
     setSlides([{ id: 'slide-1', layers: [], transition: 'fade' }]);
     setActiveSlideIndex(0);
+    setDrawingPaths([]);
+    setDrawingUndoStack([]);
+    setDrawingRedoStack([]);
   };
 
   // Export Canvas to PNG
@@ -694,6 +752,27 @@ export default function PhotoEditor() {
       const zoomStep = e.deltaY < 0 ? 10 : -10;
       setZoom((prev) => Math.max(25, Math.min(300, prev + zoomStep)));
     }
+  };
+
+  // Whiteboard Undo/Redo
+  const handleDrawingUndo = () => {
+    if (drawingPaths.length === 0) return;
+    const previous = [...drawingPaths];
+    const popped = previous.pop();
+    if (popped) {
+      setDrawingRedoStack((prev) => [[popped], ...prev]);
+    }
+    setDrawingPaths(previous);
+  };
+
+  const handleDrawingRedo = () => {
+    if (drawingRedoStack.length === 0) return;
+    const nextRedo = [...drawingRedoStack];
+    const toRestore = nextRedo.shift();
+    if (toRestore && toRestore.length > 0) {
+      setDrawingPaths((prev) => [...prev, toRestore[0]]);
+    }
+    setDrawingRedoStack(nextRedo);
   };
 
   // Affine Triangle Texture Mapper for Perspective Warp
@@ -839,8 +918,35 @@ export default function PhotoEditor() {
       }
     }
 
-    // 3. Draw Layers sequentially (z-index order)
+    // 3. Draw Freehand Drawing Paths (Whiteboard Mode)
+    drawingPaths.forEach((path) => {
+      if (path.points.length < 2) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.strokeStyle = path.color;
+      
+      // Set brush width based on profile
+      let lineWidth = 4;
+      if (path.brush === 'sketch') lineWidth = 2;
+      if (path.brush === 'bold') lineWidth = 10;
+      if (path.brush === 'paintbrush') lineWidth = 6;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.moveTo(path.points[0].x, path.points[0].y);
+      for (let i = 1; i < path.points.length; i++) {
+        ctx.lineTo(path.points[i].x, path.points[i].y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // 4. Draw Layers sequentially (z-index order)
     layers.forEach((layer) => {
+      // Skip rendering text layer on canvas if it is currently being edited inline
+      if (layer.id === editingTextLayerId) return;
+
       ctx.save();
       
       // Apply global layer opacity
@@ -1060,7 +1166,7 @@ export default function PhotoEditor() {
       ctx.strokeRect(rx, ry, rw, rh);
       ctx.restore();
     }
-  }, [view, activeProject, layers, selectedLayerId, selectedLayerIds, canvasBgColor, isRubberBanding, rubberBandStart, rubberBandCurrent, cropBox, docPages]);
+  }, [view, activeProject, layers, selectedLayerId, selectedLayerIds, canvasBgColor, isRubberBanding, rubberBandStart, rubberBandCurrent, cropBox, docPages, drawingPaths, editingTextLayerId]);
 
   // Global Window Dragging & Mouse Up Listeners to prevent stuck dragging outside canvas
   useEffect(() => {
@@ -1118,7 +1224,7 @@ export default function PhotoEditor() {
             newWidth = layerStartSize.width + dx;
             newHeight = newWidth / originalRatio;
             
-            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24))) } : {};
+            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * layerStartFontSize)) } : {};
 
             updateSelectedLayer({
               width: Math.round(newWidth),
@@ -1129,7 +1235,7 @@ export default function PhotoEditor() {
             newWidth = layerStartSize.width - dx;
             newHeight = newWidth / originalRatio;
             
-            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24))) } : {};
+            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * layerStartFontSize)) } : {};
 
             updateSelectedLayer({
               x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
@@ -1141,7 +1247,7 @@ export default function PhotoEditor() {
             newWidth = layerStartSize.width + dx;
             newHeight = newWidth / originalRatio;
             
-            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24))) } : {};
+            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * layerStartFontSize)) } : {};
 
             updateSelectedLayer({
               y: Math.round(layerStartPos.y + (layerStartSize.height - newHeight)),
@@ -1153,7 +1259,7 @@ export default function PhotoEditor() {
             newWidth = layerStartSize.width - dx;
             newHeight = newWidth / originalRatio;
             
-            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24))) } : {};
+            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * layerStartFontSize)) } : {};
 
             updateSelectedLayer({
               x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
@@ -1179,7 +1285,7 @@ export default function PhotoEditor() {
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
-  }, [isDragging, selectedLayerId, activeHandle, dragStart, layers, layerStartCorners, layerStartPos, layerStartSize]);
+  }, [isDragging, selectedLayerId, activeHandle, dragStart, layers, layerStartCorners, layerStartPos, layerStartSize, layerStartFontSize]);
 
   // Global Window Listeners for Rubber-band selection to prevent hold glitch and out-of-canvas issues
   useEffect(() => {
@@ -1249,6 +1355,18 @@ export default function PhotoEditor() {
     const clickX = (e.clientX - rect.left) * scaleX;
     const clickY = (e.clientY - rect.top) * scaleY;
 
+    // If drawing mode is active, handle drawing path creation
+    if (activeTool === 'draw') {
+      setIsDrawingOnCanvas(true);
+      const newPath: DrawingPath = {
+        points: [{ x: clickX, y: clickY }],
+        color: activeBrushColor,
+        brush: activeBrush,
+      };
+      setDrawingPaths((prev) => [...prev, newPath]);
+      return;
+    }
+
     // 1. Check if clicked on a corner handle of the currently selected layer
     if (selectedLayerId) {
       const layer = layers.find((l) => l.id === selectedLayerId);
@@ -1313,6 +1431,7 @@ export default function PhotoEditor() {
             setDragStart({ x: clickX, y: clickY });
             setLayerStartPos({ x: layer.x, y: layer.y });
             setLayerStartSize({ width: layer.width, height: layer.height });
+            setLayerStartFontSize(layer.fontSize || 24);
             return;
           }
           if (dist(trRot, { x: clickX, y: clickY }) < handleRadius) {
@@ -1321,6 +1440,7 @@ export default function PhotoEditor() {
             setDragStart({ x: clickX, y: clickY });
             setLayerStartPos({ x: layer.x, y: layer.y });
             setLayerStartSize({ width: layer.width, height: layer.height });
+            setLayerStartFontSize(layer.fontSize || 24);
             return;
           }
           if (dist(blRot, { x: clickX, y: clickY }) < handleRadius) {
@@ -1329,6 +1449,7 @@ export default function PhotoEditor() {
             setDragStart({ x: clickX, y: clickY });
             setLayerStartPos({ x: layer.x, y: layer.y });
             setLayerStartSize({ width: layer.width, height: layer.height });
+            setLayerStartFontSize(layer.fontSize || 24);
             return;
           }
           if (dist(brRot, { x: clickX, y: clickY }) < handleRadius) {
@@ -1337,6 +1458,7 @@ export default function PhotoEditor() {
             setDragStart({ x: clickX, y: clickY });
             setLayerStartPos({ x: layer.x, y: layer.y });
             setLayerStartSize({ width: layer.width, height: layer.height });
+            setLayerStartFontSize(layer.fontSize || 24);
             return;
           }
         }
@@ -1390,6 +1512,62 @@ export default function PhotoEditor() {
     }
   };
 
+  // Handle Drawing Mouse Move
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (activeTool !== 'draw' || !isDrawingOnCanvas || drawingPaths.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const currentX = (e.clientX - rect.left) * scaleX;
+    const currentY = (e.clientY - rect.top) * scaleY;
+
+    const updatedPaths = [...drawingPaths];
+    const activePath = updatedPaths[updatedPaths.length - 1];
+    activePath.points.push({ x: currentX, y: currentY });
+    setDrawingPaths(updatedPaths);
+  };
+
+  const handleCanvasMouseUp = () => {
+    if (activeTool === 'draw') {
+      setIsDrawingOnCanvas(false);
+    }
+  };
+
+  // Double Click to Edit Text Layer
+  const handleCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+
+    // Find if double clicked on a text layer
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const layer = layers[i];
+      if (layer.type === 'text') {
+        if (
+          clickX >= layer.x &&
+          clickX <= layer.x + layer.width &&
+          clickY >= layer.y &&
+          clickY <= layer.y + layer.height
+        ) {
+          setEditingTextLayerId(layer.id);
+          setEditingTextValue(layer.text || '');
+          setTimeout(() => {
+            inlineInputRef.current?.focus();
+          }, 50);
+          break;
+        }
+      }
+    }
+  };
+
   // Keyboard listener for Presentation Mode exit
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1436,6 +1614,25 @@ export default function PhotoEditor() {
     const updatedSlides = [...slides];
     updatedSlides[index].transition = updatedSlides[index].transition === 'fade' ? 'slide' : 'fade';
     setSlides(updatedSlides);
+  };
+
+  // Handle Canvas Click to add floating text at exact coordinates
+  const handleCanvasClickForText = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (activeTool !== 'pointer') return;
+    // Only trigger if clicking the container background directly
+    if (e.target !== e.currentTarget) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+
+    // Add text layer at exact click coordinates
+    addTextLayer('body', clickX - 175, clickY - 40);
   };
 
   return (
@@ -1673,20 +1870,20 @@ export default function PhotoEditor() {
 
           <div className="flex-1 flex overflow-hidden">
             
-            {/* Minimalist Left Icon Panel */}
-            <div className="w-20 border-r border-zinc-800/60 bg-zinc-950 flex flex-col items-center py-6 gap-5 z-20">
+            {/* Minimalist Left Icon Panel - Single Vertical Column */}
+            <div className="w-24 border-r border-zinc-800/60 bg-zinc-950 flex flex-col items-center py-6 gap-6 z-20 overflow-y-auto">
               {[
-                { id: 'templates', icon: <Layout className="w-8 h-8" />, label: 'Templates' },
-                { id: 'elements', icon: <Smile className="w-8 h-8" />, label: 'Elements' },
-                { id: 'texts', icon: <Type className="w-8 h-8" />, label: 'Texts' },
-                { id: 'uploads', icon: <Upload className="w-8 h-8" />, label: 'Uploads' },
-                { id: 'tools', icon: <Sliders className="w-8 h-8" />, label: 'Tools' },
-                { id: 'shortcuts', icon: <Keyboard className="w-8 h-8" />, label: 'Shortcuts' },
+                { id: 'templates', icon: <Layout className="w-10 h-10" />, label: 'Templates' },
+                { id: 'elements', icon: <Smile className="w-10 h-10" />, label: 'Elements' },
+                { id: 'texts', icon: <Type className="w-10 h-10" />, label: 'Texts' },
+                { id: 'uploads', icon: <Upload className="w-10 h-10" />, label: 'Uploads' },
+                { id: 'tools', icon: <Sliders className="w-10 h-10" />, label: 'Tools' },
+                { id: 'shortcuts', icon: <Keyboard className="w-10 h-10" />, label: 'Shortcuts' },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveLeftTab(activeLeftTab === tab.id ? null : (tab.id as any))}
-                  className={`p-3.5 rounded-xl transition-all relative group ${
+                  className={`p-4 rounded-2xl transition-all relative group ${
                     activeLeftTab === tab.id 
                       ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
@@ -1694,11 +1891,31 @@ export default function PhotoEditor() {
                   title={tab.label}
                 >
                   {tab.icon}
-                  <span className="absolute left-24 bg-zinc-950 text-white text-xs px-2.5 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30 border border-zinc-800">
+                  <span className="absolute left-28 bg-zinc-950 text-white text-xs px-2.5 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30 border border-zinc-800">
                     {tab.label}
                   </span>
                 </button>
               ))}
+
+              {/* Whiteboard Mode Left Panel Drawing Color Palette */}
+              {activeProject.type === 'whiteboard' && (
+                <div className="mt-4 flex flex-col gap-2 border-t border-zinc-800/60 pt-4 w-full px-3">
+                  <span className="text-[10px] font-bold text-zinc-500 text-center uppercase tracking-wider">Brush</span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {WHITEBOARD_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setActiveBrushColor(color)}
+                        className={`w-6 h-6 rounded-full border transition-all ${
+                          activeBrushColor === color ? 'border-white scale-110 ring-2 ring-indigo-500/50' : 'border-zinc-800'
+                        }`}
+                        style={{ backgroundColor: color }}
+                        title={color}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Interactive Drawer */}
@@ -1722,7 +1939,7 @@ export default function PhotoEditor() {
                       <div className="space-y-3">
                         {/* Default Passive Income Template */}
                         <div 
-                          onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=1200&q=80', 'https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=1200&q=80', true)}
+                          onClick={() => addImageLayerFromSrc('Passive Income', 'https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=1200&q=80', true)}
                           className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                         >
                           <div className="aspect-[9/16] w-full bg-zinc-900 relative overflow-hidden flex flex-col justify-end p-4">
@@ -1738,14 +1955,14 @@ export default function PhotoEditor() {
                         {activeProject.aspectRatio === '16:9' ? (
                           <>
                             <div 
-                              onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80', 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80', true)}
+                              onClick={() => addImageLayerFromSrc('Cyberpunk Thumbnail', 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80', true)}
                               className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                             >
                               <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=300&q=80" className="w-full h-24 object-cover" alt="YouTube Template 1" />
                               <div className="p-2 text-[11px] font-semibold text-zinc-300">Cyberpunk Thumbnail Layout</div>
                             </div>
                             <div 
-                              onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=1200&q=80', 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=1200&q=80', true)}
+                              onClick={() => addImageLayerFromSrc('Gaming Stream', 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=1200&q=80', true)}
                               className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                             >
                               <img src="https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=300&q=80" className="w-full h-24 object-cover" alt="YouTube Template 2" />
@@ -1755,14 +1972,14 @@ export default function PhotoEditor() {
                         ) : (
                           <>
                             <div 
-                              onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80', true)}
+                              onClick={() => addImageLayerFromSrc('Minimalist Square', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80', true)}
                               className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                             >
                               <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 1" />
                               <div className="p-2 text-[11px] font-semibold text-zinc-300">Minimalist Square Post</div>
                             </div>
                             <div 
-                              onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=1200&q=80', 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=1200&q=80', true)}
+                              onClick={() => addImageLayerFromSrc('Neon Quote', 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=1200&q=80', true)}
                               className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                             >
                               <img src="https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 2" />
@@ -1921,11 +2138,28 @@ export default function PhotoEditor() {
                   {activeLeftTab === 'tools' && (
                     <div className="space-y-3">
                       <button
-                        onClick={() => setSelectedLayerId(null)}
-                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                        onClick={() => {
+                          setActiveTool('pointer');
+                          setSelectedLayerId(null);
+                        }}
+                        className={`w-full py-2.5 px-3 border rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2 ${
+                          activeTool === 'pointer' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80'
+                        }`}
                       >
                         <MousePointer className="w-4 h-4 text-indigo-400" />
                         Select / Pointer
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveTool('draw');
+                          setSelectedLayerId(null);
+                        }}
+                        className={`w-full py-2.5 px-3 border rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2 ${
+                          activeTool === 'draw' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80'
+                        }`}
+                      >
+                        <PenTool className="w-4 h-4 text-indigo-400" />
+                        Freehand Draw Tool
                       </button>
                       <button
                         onClick={() => addShapeLayer('rect')}
@@ -1983,6 +2217,7 @@ export default function PhotoEditor() {
             <div 
               ref={containerRef}
               onWheel={handleWheelZoom}
+              onClick={handleCanvasClickForText}
               className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden bg-zinc-950/20"
             >
               {/* Dynamic Aspect Ratio Container */}
@@ -2006,8 +2241,45 @@ export default function PhotoEditor() {
                   <canvas
                     ref={canvasRef}
                     onMouseDown={handleCanvasMouseDown}
+                    onMouseMove={handleCanvasMouseMove}
+                    onMouseUp={handleCanvasMouseUp}
+                    onDoubleClick={handleCanvasDoubleClick}
                     className="w-full h-full object-contain cursor-crosshair"
                   />
+
+                  {/* Inline Text Editor Overlay */}
+                  {editingTextLayerId && (
+                    (() => {
+                      const layer = layers.find((l) => l.id === editingTextLayerId);
+                      if (!layer) return null;
+                      return (
+                        <textarea
+                          ref={inlineInputRef}
+                          value={editingTextValue}
+                          onChange={(e) => {
+                            setEditingTextValue(e.target.value);
+                            updateSelectedLayer({ text: e.target.value });
+                          }}
+                          onBlur={() => setEditingTextLayerId(null)}
+                          className="absolute bg-white text-black border-2 border-indigo-500 rounded p-2 shadow-2xl focus:outline-none resize-none overflow-hidden"
+                          style={{
+                            left: `${layer.x}px`,
+                            top: `${layer.y}px`,
+                            width: `${layer.width}px`,
+                            height: `${layer.height}px`,
+                            fontSize: `${layer.fontSize || 24}px`,
+                            fontFamily: layer.fontFamily || 'sans-serif',
+                            textAlign: layer.textAlign || 'center',
+                            fontWeight: layer.isBold ? 'bold' : 'normal',
+                            fontStyle: layer.isItalic ? 'italic' : 'normal',
+                            letterSpacing: `${layer.letterSpacing || 0}px`,
+                            wordWrap: 'break-word',
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        />
+                      );
+                    })()
+                  )}
                 </div>
               </div>
 
@@ -2055,6 +2327,77 @@ export default function PhotoEditor() {
                   >
                     <Plus className="w-4 h-4" />
                   </button>
+                </div>
+              )}
+
+              {/* Specialized Bottom Control Bar for Whiteboard Mode */}
+              {activeProject.type === 'whiteboard' && (
+                <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 flex items-center gap-4 bg-zinc-900/90 px-5 py-3 rounded-2xl border border-zinc-800/60 backdrop-blur-md shadow-xl z-20">
+                  <div className="flex items-center gap-1 border-r border-zinc-800/60 pr-3">
+                    <button
+                      onClick={handleDrawingUndo}
+                      className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-300 hover:text-white transition-all"
+                      title="Undo Drawing"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handleDrawingRedo}
+                      className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-300 hover:text-white transition-all"
+                      title="Redo Drawing"
+                    >
+                      <RotateCw className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 border-r border-zinc-800/60 pr-3">
+                    <button
+                      onClick={() => addShapeLayer('rect')}
+                      className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-300 hover:text-white transition-all"
+                      title="Add Rectangle"
+                    >
+                      <Square className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => addShapeLayer('circle')}
+                      className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-300 hover:text-white transition-all"
+                      title="Add Circle"
+                    >
+                      <Circle className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => addTextLayer()}
+                      className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-300 hover:text-white transition-all"
+                      title="Add Text"
+                    >
+                      <Type className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Pen/Brush Library Submenu */}
+                  <div className="flex items-center gap-1">
+                    {[
+                      { id: 'marker', label: 'Marker' },
+                      { id: 'sketch', label: 'Sketch' },
+                      { id: 'bold', label: 'Bold' },
+                      { id: 'paintbrush', label: 'Paintbrush' },
+                    ].map((brush) => (
+                      <button
+                        key={brush.id}
+                        onClick={() => {
+                          setActiveTool('draw');
+                          setActiveBrush(brush.id as any);
+                        }}
+                        className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                          activeBrush === brush.id && activeTool === 'draw'
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {brush.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -2223,7 +2566,7 @@ export default function PhotoEditor() {
                   )}
                 </div>
 
-                {/* Section 3: Selected Layer Properties (Accordion Panel - Restructured Priority) */}
+                {/* Section 3: Selected Layer Properties (Restructured Priority Layout) */}
                 {selectedLayer ? (
                   <div className="space-y-4 pt-4 border-t border-zinc-800/60">
                     <div className="flex items-center gap-2 mb-2">
@@ -2233,86 +2576,86 @@ export default function PhotoEditor() {
                       </h2>
                     </div>
 
-                    {/* 1. Filter and Fine Adjustments (Sliders for Brightness, Hue, Saturation, Gamma) */}
+                    {/* [TOP OF RIGHT PANEL]: Rotation, Duplicate, Flip, and Crop/Warp Split Modules */}
+                    
+                    {/* Rotation Module */}
                     <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                       <button
-                        onClick={() => toggleAccordion('filters')}
+                        onClick={() => toggleAccordion('rotation')}
                         className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
                       >
-                        <span>Filters & Adjustments</span>
-                        <Sliders className="w-4 h-4 text-zinc-500" />
+                        <span>Rotation & Actions</span>
+                        <RotateCw className="w-4 h-4 text-zinc-500" />
                       </button>
-                      {rightAccordion.filters && (
+                      {rightAccordion.rotation && (
                         <div className="p-4 border-t border-zinc-800/40 space-y-4">
-                          {/* Brightness */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-zinc-400">Brightness</span>
-                              <span className="text-purple-400">{selectedLayer.filters.brightness}%</span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => updateSelectedLayer({ rotation: (selectedLayer.rotation - 90) % 360 })}
+                              className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              90° CCW
+                            </button>
+                            <button
+                              onClick={() => updateSelectedLayer({ rotation: (selectedLayer.rotation + 90) % 360 })}
+                              className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                            >
+                              <RotateCw className="w-3.5 h-3.5" />
+                              90° CW
+                            </button>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                              <span>Fine Rotation</span>
+                              <span>{selectedLayer.rotation}°</span>
                             </div>
                             <input
-                              type="range" min="0" max="200" value={selectedLayer.filters.brightness}
-                              onChange={(e) => updateSelectedLayerFilters({ brightness: Number(e.target.value) })}
-                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                              type="range" min="0" max="360"
+                              value={selectedLayer.rotation}
+                              onChange={(e) => updateSelectedLayer({ rotation: Number(e.target.value) })}
+                              className="w-full accent-purple-500"
                             />
                           </div>
-
-                          {/* Contrast */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-zinc-400">Contrast</span>
-                              <span className="text-purple-400">{selectedLayer.filters.contrast}%</span>
-                            </div>
-                            <input
-                              type="range" min="0" max="200" value={selectedLayer.filters.contrast}
-                              onChange={(e) => updateSelectedLayerFilters({ contrast: Number(e.target.value) })}
-                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                            />
-                          </div>
-
-                          {/* Saturation */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-zinc-400">Saturation</span>
-                              <span className="text-purple-400">{selectedLayer.filters.saturation}%</span>
-                            </div>
-                            <input
-                              type="range" min="0" max="200" value={selectedLayer.filters.saturation}
-                              onChange={(e) => updateSelectedLayerFilters({ saturation: Number(e.target.value) })}
-                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                            />
-                          </div>
-
-                          {/* Hue Rotate */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-zinc-400">Hue Rotate</span>
-                              <span className="text-purple-400">{selectedLayer.filters.hueRotate}°</span>
-                            </div>
-                            <input
-                              type="range" min="0" max="360" value={selectedLayer.filters.hueRotate}
-                              onChange={(e) => updateSelectedLayerFilters({ hueRotate: Number(e.target.value) })}
-                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                            />
-                          </div>
-
-                          {/* Gamma Correction */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-xs">
-                              <span className="text-zinc-400">Gamma Correction</span>
-                              <span className="text-purple-400">{selectedLayer.filters.gamma}%</span>
-                            </div>
-                            <input
-                              type="range" min="10" max="200" value={selectedLayer.filters.gamma}
-                              onChange={(e) => updateSelectedLayerFilters({ gamma: Number(e.target.value) })}
-                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                            />
-                          </div>
+                          <button
+                            onClick={duplicateLayer}
+                            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all"
+                          >
+                            <Copy className="w-4 h-4" />
+                            Duplicate Layer
+                          </button>
                         </div>
                       )}
                     </div>
 
-                    {/* 2. Crop and Perspective Warp Core Selections */}
+                    {/* Mirror & Flip Controls */}
+                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <div className="px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300">
+                        <span>Mirror & Flip Controls</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => updateSelectedLayer({ flipH: !selectedLayer.flipH })}
+                            className={`p-1.5 rounded border transition-all ${
+                              selectedLayer.flipH ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white'
+                            }`}
+                            title="Flip Horizontal"
+                          >
+                            <FlipHorizontal className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => updateSelectedLayer({ flipV: !selectedLayer.flipV })}
+                            className={`p-1.5 rounded border transition-all ${
+                              selectedLayer.flipV ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white'
+                            }`}
+                            title="Flip Vertical"
+                          >
+                            <FlipVertical className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Crop & Warp Split Modules */}
                     {(selectedLayer.type === 'image' || selectedLayer.type === 'element') && (
                       <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                         <button
@@ -2407,104 +2750,7 @@ export default function PhotoEditor() {
                       </div>
                     )}
 
-                    {/* 3. Canvas Axis Rotation (90° Clockwise / 90° Anti-clockwise buttons) */}
-                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
-                      <button
-                        onClick={() => toggleAccordion('rotation')}
-                        className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
-                      >
-                        <span>Rotation Module</span>
-                        <RotateCw className="w-4 h-4 text-zinc-500" />
-                      </button>
-                      {rightAccordion.rotation && (
-                        <div className="p-4 border-t border-zinc-800/40 space-y-4">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => updateSelectedLayer({ rotation: (selectedLayer.rotation - 90) % 360 })}
-                              className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              90° CCW
-                            </button>
-                            <button
-                              onClick={() => updateSelectedLayer({ rotation: (selectedLayer.rotation + 90) % 360 })}
-                              className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
-                            >
-                              <RotateCw className="w-3.5 h-3.5" />
-                              90° CW
-                            </button>
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                              <span>Fine Rotation</span>
-                              <span>{selectedLayer.rotation}°</span>
-                            </div>
-                            <input
-                              type="range" min="0" max="360"
-                              value={selectedLayer.rotation}
-                              onChange={(e) => updateSelectedLayer({ rotation: Number(e.target.value) })}
-                              className="w-full accent-purple-500"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 4. Layer Transformation Mirroring (Flip Horizontal / Flip Vertical) */}
-                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
-                      <div className="px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300">
-                        <span>Mirror & Flip Controls</span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => updateSelectedLayer({ flipH: !selectedLayer.flipH })}
-                            className={`p-1.5 rounded border transition-all ${
-                              selectedLayer.flipH ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white'
-                            }`}
-                            title="Flip Horizontal"
-                          >
-                            <FlipHorizontal className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => updateSelectedLayer({ flipV: !selectedLayer.flipV })}
-                            className={`p-1.5 rounded border transition-all ${
-                              selectedLayer.flipV ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white'
-                            }`}
-                            title="Flip Vertical"
-                          >
-                            <FlipVertical className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Accordion: Opacity & Layer Alpha */}
-                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
-                      <button
-                        onClick={() => toggleAccordion('opacity')}
-                        className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
-                      >
-                        <span>Opacity & Layer Alpha</span>
-                        <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${rightAccordion.opacity ? 'rotate-180' : ''}`} />
-                      </button>
-                      {rightAccordion.opacity && (
-                        <div className="p-4 border-t border-zinc-800/40 space-y-4">
-                          <div>
-                            <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                              <span>Layer Opacity</span>
-                              <span>{selectedLayer.opacity}%</span>
-                            </div>
-                            <input
-                              type="range" min="0" max="100"
-                              value={selectedLayer.opacity}
-                              onChange={(e) => updateSelectedLayer({ opacity: Number(e.target.value) })}
-                              className="w-full accent-purple-500"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Accordion: Typography & Text Box */}
+                    {/* Typography & Text Box (High Priority for Text Layers) */}
                     {selectedLayer.type === 'text' && (
                       <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                         <button
@@ -2568,6 +2814,114 @@ export default function PhotoEditor() {
                         )}
                       </div>
                     )}
+
+                    {/* [BOTTOM OF RIGHT PANEL]: Advanced color filtering adjustments, sliders, and opacity presets */}
+                    
+                    {/* Opacity & Layer Alpha */}
+                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <button
+                        onClick={() => toggleAccordion('opacity')}
+                        className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                      >
+                        <span>Opacity & Layer Alpha</span>
+                        <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${rightAccordion.opacity ? 'rotate-180' : ''}`} />
+                      </button>
+                      {rightAccordion.opacity && (
+                        <div className="p-4 border-t border-zinc-800/40 space-y-4">
+                          <div>
+                            <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                              <span>Layer Opacity</span>
+                              <span>{selectedLayer.opacity}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="100"
+                              value={selectedLayer.opacity}
+                              onChange={(e) => updateSelectedLayer({ opacity: Number(e.target.value) })}
+                              className="w-full accent-purple-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Filters & Adjustments */}
+                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <button
+                        onClick={() => toggleAccordion('filters')}
+                        className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                      >
+                        <span>Filters & Adjustments</span>
+                        <Sliders className="w-4 h-4 text-zinc-500" />
+                      </button>
+                      {rightAccordion.filters && (
+                        <div className="p-4 border-t border-zinc-800/40 space-y-4">
+                          {/* Brightness */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Brightness</span>
+                              <span className="text-purple-400">{selectedLayer.filters.brightness}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="200" value={selectedLayer.filters.brightness}
+                              onChange={(e) => updateSelectedLayerFilters({ brightness: Number(e.target.value) })}
+                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+
+                          {/* Contrast */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Contrast</span>
+                              <span className="text-purple-400">{selectedLayer.filters.contrast}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="200" value={selectedLayer.filters.contrast}
+                              onChange={(e) => updateSelectedLayerFilters({ contrast: Number(e.target.value) })}
+                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+
+                          {/* Saturation */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Saturation</span>
+                              <span className="text-purple-400">{selectedLayer.filters.saturation}%</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="200" value={selectedLayer.filters.saturation}
+                              onChange={(e) => updateSelectedLayerFilters({ saturation: Number(e.target.value) })}
+                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+
+                          {/* Hue Rotate */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Hue Rotate</span>
+                              <span className="text-purple-400">{selectedLayer.filters.hueRotate}°</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="360" value={selectedLayer.filters.hueRotate}
+                              onChange={(e) => updateSelectedLayerFilters({ hueRotate: Number(e.target.value) })}
+                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+
+                          {/* Gamma Correction */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-400">Gamma Correction</span>
+                              <span className="text-purple-400">{selectedLayer.filters.gamma}%</span>
+                            </div>
+                            <input
+                              type="range" min="10" max="200" value={selectedLayer.filters.gamma}
+                              onChange={(e) => updateSelectedLayerFilters({ gamma: Number(e.target.value) })}
+                              className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
                   </div>
                 ) : (
