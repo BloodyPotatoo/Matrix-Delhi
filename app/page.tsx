@@ -582,6 +582,109 @@ export default function PhotoEditor() {
     });
   }, [view, activeProject, layers, selectedLayerId, canvasBgColor]);
 
+  // Global Window Dragging & Mouse Up Listeners to prevent stuck dragging outside canvas
+  useEffect(() => {
+    if (!isDragging || !selectedLayerId || !activeHandle) return;
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const currentX = (e.clientX - rect.left) * scaleX;
+      const currentY = (e.clientY - rect.top) * scaleY;
+
+      const dx = currentX - dragStart.x;
+      const dy = currentY - dragStart.y;
+
+      const layer = layers.find((l) => l.id === selectedLayerId);
+      if (!layer) return;
+
+      if (layer.warpMode) {
+        // Perspective Warp Mode: Drag individual corners independently
+        if (activeHandle === 'move') {
+          updateSelectedLayer({
+            corners: {
+              tl: { x: Math.round(layerStartCorners.tl.x + dx), y: Math.round(layerStartCorners.tl.y + dy) },
+              tr: { x: Math.round(layerStartCorners.tr.x + dx), y: Math.round(layerStartCorners.tr.y + dy) },
+              bl: { x: Math.round(layerStartCorners.bl.x + dx), y: Math.round(layerStartCorners.bl.y + dy) },
+              br: { x: Math.round(layerStartCorners.br.x + dx), y: Math.round(layerStartCorners.br.y + dy) },
+            }
+          });
+        } else {
+          const updatedCorners = { ...layer.corners };
+          updatedCorners[activeHandle] = {
+            x: Math.round(layerStartCorners[activeHandle].x + dx),
+            y: Math.round(layerStartCorners[activeHandle].y + dy),
+          };
+          updateSelectedLayer({ corners: updatedCorners });
+        }
+      } else {
+        // Standard Uniform Scaling Mode
+        if (activeHandle === 'move') {
+          updateSelectedLayer({
+            x: Math.round(layerStartPos.x + dx),
+            y: Math.round(layerStartPos.y + dy),
+          });
+        } else {
+          // Uniform scaling calculation based on aspect ratio
+          const originalRatio = layerStartSize.width / layerStartSize.height;
+          let newWidth = layerStartSize.width;
+          let newHeight = layerStartSize.height;
+
+          if (activeHandle === 'br') {
+            newWidth = Math.max(20, layerStartSize.width + dx);
+            newHeight = newWidth / originalRatio;
+            updateSelectedLayer({
+              width: Math.round(newWidth),
+              height: Math.round(newHeight),
+            });
+          } else if (activeHandle === 'bl') {
+            newWidth = Math.max(20, layerStartSize.width - dx);
+            newHeight = newWidth / originalRatio;
+            updateSelectedLayer({
+              x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
+              width: Math.round(newWidth),
+              height: Math.round(newHeight),
+            });
+          } else if (activeHandle === 'tr') {
+            newWidth = Math.max(20, layerStartSize.width + dx);
+            newHeight = newWidth / originalRatio;
+            updateSelectedLayer({
+              y: Math.round(layerStartPos.y + (layerStartSize.height - newHeight)),
+              width: Math.round(newWidth),
+              height: Math.round(newHeight),
+            });
+          } else if (activeHandle === 'tl') {
+            newWidth = Math.max(20, layerStartSize.width - dx);
+            newHeight = newWidth / originalRatio;
+            updateSelectedLayer({
+              x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
+              y: Math.round(layerStartPos.y + (layerStartSize.height - newHeight)),
+              width: Math.round(newWidth),
+              height: Math.round(newHeight),
+            });
+          }
+        }
+      }
+    };
+
+    const handleWindowMouseUp = () => {
+      setIsDragging(false);
+      setActiveHandle(null);
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [isDragging, selectedLayerId, activeHandle, dragStart, layers, layerStartCorners, layerStartPos, layerStartSize]);
+
   // Interactive Canvas Dragging, Selection & Corner Handle Transformations
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -725,98 +828,6 @@ export default function PhotoEditor() {
     setSelectedLayerId(foundLayerId);
   };
 
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging || !selectedLayerId || !activeHandle) return;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const currentX = (e.clientX - rect.left) * scaleX;
-    const currentY = (e.clientY - rect.top) * scaleY;
-
-    const dx = currentX - dragStart.x;
-    const dy = currentY - dragStart.y;
-
-    const layer = layers.find((l) => l.id === selectedLayerId);
-    if (!layer) return;
-
-    if (layer.warpMode) {
-      // Perspective Warp Mode: Drag individual corners independently
-      if (activeHandle === 'move') {
-        updateSelectedLayer({
-          corners: {
-            tl: { x: Math.round(layerStartCorners.tl.x + dx), y: Math.round(layerStartCorners.tl.y + dy) },
-            tr: { x: Math.round(layerStartCorners.tr.x + dx), y: Math.round(layerStartCorners.tr.y + dy) },
-            bl: { x: Math.round(layerStartCorners.bl.x + dx), y: Math.round(layerStartCorners.bl.y + dy) },
-            br: { x: Math.round(layerStartCorners.br.x + dx), y: Math.round(layerStartCorners.br.y + dy) },
-          }
-        });
-      } else {
-        const updatedCorners = { ...layer.corners };
-        updatedCorners[activeHandle] = {
-          x: Math.round(layerStartCorners[activeHandle].x + dx),
-          y: Math.round(layerStartCorners[activeHandle].y + dy),
-        };
-        updateSelectedLayer({ corners: updatedCorners });
-      }
-    } else {
-      // Standard Uniform Scaling Mode
-      if (activeHandle === 'move') {
-        updateSelectedLayer({
-          x: Math.round(layerStartPos.x + dx),
-          y: Math.round(layerStartPos.y + dy),
-        });
-      } else {
-        // Uniform scaling calculation based on aspect ratio
-        const originalRatio = layerStartSize.width / layerStartSize.height;
-        let newWidth = layerStartSize.width;
-        let newHeight = layerStartSize.height;
-
-        if (activeHandle === 'br') {
-          newWidth = Math.max(20, layerStartSize.width + dx);
-          newHeight = newWidth / originalRatio;
-          updateSelectedLayer({
-            width: Math.round(newWidth),
-            height: Math.round(newHeight),
-          });
-        } else if (activeHandle === 'bl') {
-          newWidth = Math.max(20, layerStartSize.width - dx);
-          newHeight = newWidth / originalRatio;
-          updateSelectedLayer({
-            x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
-            width: Math.round(newWidth),
-            height: Math.round(newHeight),
-          });
-        } else if (activeHandle === 'tr') {
-          newWidth = Math.max(20, layerStartSize.width + dx);
-          newHeight = newWidth / originalRatio;
-          updateSelectedLayer({
-            y: Math.round(layerStartPos.y + (layerStartSize.height - newHeight)),
-            width: Math.round(newWidth),
-            height: Math.round(newHeight),
-          });
-        } else if (activeHandle === 'tl') {
-          newWidth = Math.max(20, layerStartSize.width - dx);
-          newHeight = newWidth / originalRatio;
-          updateSelectedLayer({
-            x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
-            y: Math.round(layerStartPos.y + (layerStartSize.height - newHeight)),
-            width: Math.round(newWidth),
-            height: Math.round(newHeight),
-          });
-        }
-      }
-    }
-  };
-
-  const handleCanvasMouseUp = () => {
-    setIsDragging(false);
-    setActiveHandle(null);
-  };
-
   // Export final canvas
   const handleExport = () => {
     if (!canvasRef.current) return;
@@ -951,8 +962,6 @@ export default function PhotoEditor() {
                 <canvas
                   ref={canvasRef}
                   onMouseDown={handleCanvasMouseDown}
-                  onMouseMove={handleCanvasMouseMove}
-                  onMouseUp={handleCanvasMouseUp}
                   className="w-full h-full object-contain cursor-move"
                 />
               </div>
