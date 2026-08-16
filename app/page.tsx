@@ -16,16 +16,16 @@ import {
   Type,
   Square,
   Circle,
-  Brush,
   Layers,
   Plus,
   Minus,
-  ChevronLeft,
-  ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Maximize2,
   FileText,
   Layout,
-  Palette
+  Palette,
+  Move
 } from 'lucide-react';
 
 // Types & Interfaces
@@ -37,32 +37,30 @@ interface FilterSettings {
   hueRotate: number;
 }
 
-interface TransformSettings {
-  rotation: number;
-  flipH: boolean;
-  flipV: boolean;
-}
-
-interface PerspectiveWarp {
-  topLeftX: number;
-  topLeftY: number;
-  topRightX: number;
-  topRightY: number;
-  bottomLeftX: number;
-  bottomLeftY: number;
-  bottomRightX: number;
-  bottomRightY: number;
-}
-
-interface TextLayer {
+interface Layer {
   id: string;
-  text: string;
-  fontSize: number;
-  color: string;
-  letterSpacing: number;
-  lineHeight: number;
+  type: 'image' | 'text' | 'shape';
+  name: string;
+  // Image specific
+  src?: string;
+  imgElement?: HTMLImageElement | null;
+  // Shape specific
+  shapeType?: 'rect' | 'circle';
+  color?: string;
+  // Common transform properties
   x: number;
   y: number;
+  width: number;
+  height: number;
+  rotation: number; // degrees
+  opacity: number; // 0 to 100
+  flipH: boolean;
+  flipV: boolean;
+  // Filters (for image layers)
+  filters: FilterSettings;
+  // Text specific
+  text?: string;
+  fontSize?: number;
 }
 
 interface ProjectConfig {
@@ -82,19 +80,6 @@ const DEFAULT_FILTERS: FilterSettings = {
   saturation: 100,
   blur: 0,
   hueRotate: 0,
-};
-
-const DEFAULT_TRANSFORMS: TransformSettings = {
-  rotation: 0,
-  flipH: false,
-  flipV: false,
-};
-
-const DEFAULT_WARP: PerspectiveWarp = {
-  topLeftX: 0, topLeftY: 0,
-  topRightX: 100, topRightY: 0,
-  bottomLeftX: 0, bottomLeftY: 100,
-  bottomRightX: 100, bottomRightY: 100,
 };
 
 const PROJECT_TEMPLATES: ProjectConfig[] = [
@@ -143,7 +128,7 @@ const PROJECT_TEMPLATES: ProjectConfig[] = [
     name: 'Infinite Whiteboard',
     description: 'Enforce an unconstrained, freeform grid canvas. Vector shapes & freehand drawing.',
     aspectRatio: 'freeform',
-    ratioValue: 1.5, // default fallback ratio for preview
+    ratioValue: 1.5,
     type: 'whiteboard',
     icon: <Palette className="w-6 h-6 text-amber-400" />,
     accentColor: 'from-amber-500 to-orange-500',
@@ -164,26 +149,15 @@ export default function PhotoEditor() {
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [activeProject, setActiveProject] = useState<ProjectConfig>(PROJECT_TEMPLATES[0]);
 
-  // Image & Canvas State
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string>('image.jpg');
-  const [filters, setFilters] = useState<FilterSettings>(DEFAULT_FILTERS);
-  const [transforms, setTransforms] = useState<TransformSettings>(DEFAULT_TRANSFORMS);
-  const [warp, setWarp] = useState<PerspectiveWarp>(DEFAULT_WARP);
+  // Layer Engine State
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [layerStartPos, setLayerStartPos] = useState({ x: 0, y: 0 });
 
-  // Document Specific State
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalPages, setTotalPages] = useState<number>(3);
-  const [textLayers, setTextLayers] = useState<TextLayer[]>([]);
-  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
-  const [documentMargin, setDocumentMargin] = useState<number>(24);
-
-  // Whiteboard Specific State
-  const [brushColor, setBrushColor] = useState<string>('#a855f7'); // Neon purple
-  const [brushSize, setBrushSize] = useState<number>(5);
-  const [activeTool, setActiveTool] = useState<'brush' | 'rect' | 'circle' | 'select'>('brush');
-  const [isDrawing, setIsDrawing] = useState(false);
+  // Global Canvas Settings
+  const [canvasBgColor, setCanvasBgColor] = useState<string>('#ffffff'); // Clean blank white base canvas
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -194,90 +168,145 @@ export default function PhotoEditor() {
   const handleSelectProject = (project: ProjectConfig) => {
     setActiveProject(project);
     setView('editor');
-    setImageSrc(null);
-    setFilters(DEFAULT_FILTERS);
-    setTransforms(DEFAULT_TRANSFORMS);
-    setWarp(DEFAULT_WARP);
-    setTextLayers([]);
-    setSelectedTextId(null);
-    setCurrentPage(1);
+    setLayers([]);
+    setSelectedLayerId(null);
   };
 
-  // Handle file selection
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Import Image as a Layer
+  const handleImportImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      loadImage(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          const src = event.target.result as string;
+          const img = new Image();
+          img.src = src;
+          img.onload = () => {
+            const newLayer: Layer = {
+              id: Date.now().toString(),
+              type: 'image',
+              name: file.name,
+              src: src,
+              imgElement: img,
+              x: 100,
+              y: 100,
+              width: img.width > 400 ? 400 : img.width,
+              height: img.width > 400 ? (400 / img.width) * img.height : img.height,
+              rotation: 0,
+              opacity: 100,
+              flipH: false,
+              flipV: false,
+              filters: { ...DEFAULT_FILTERS },
+            };
+            setLayers((prev) => [...prev, newLayer]);
+            setSelectedLayerId(newLayer.id);
+          };
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
-  const loadImage = (file: File) => {
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setImageSrc(event.target.result as string);
-      }
+  // Add Text Layer
+  const addTextLayer = () => {
+    const newLayer: Layer = {
+      id: Date.now().toString(),
+      type: 'text',
+      name: 'Text Layer',
+      text: 'Double click to edit',
+      fontSize: 36,
+      color: '#000000',
+      x: 150,
+      y: 150,
+      width: 300,
+      height: 60,
+      rotation: 0,
+      opacity: 100,
+      flipH: false,
+      flipV: false,
+      filters: { ...DEFAULT_FILTERS },
     };
-    reader.readAsDataURL(file);
+    setLayers((prev) => [...prev, newLayer]);
+    setSelectedLayerId(newLayer.id);
   };
 
-  // Drag and drop handlers
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
+  // Add Shape Layer
+  const addShapeLayer = (shapeType: 'rect' | 'circle') => {
+    const newLayer: Layer = {
+      id: Date.now().toString(),
+      type: 'shape',
+      name: `${shapeType === 'rect' ? 'Rectangle' : 'Circle'} Layer`,
+      shapeType: shapeType,
+      color: '#a855f7', // Neon purple default
+      x: 200,
+      y: 200,
+      width: 150,
+      height: 150,
+      rotation: 0,
+      opacity: 100,
+      flipH: false,
+      flipV: false,
+      filters: { ...DEFAULT_FILTERS },
+    };
+    setLayers((prev) => [...prev, newLayer]);
+    setSelectedLayerId(newLayer.id);
   };
 
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
+  // Layer Stacking Order (z-index)
+  const moveLayer = (direction: 'up' | 'down') => {
+    if (!selectedLayerId) return;
+    const index = layers.findIndex((l) => l.id === selectedLayerId);
+    if (index === -1) return;
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      loadImage(file);
+    const newLayers = [...layers];
+    if (direction === 'up' && index < layers.length - 1) {
+      const temp = newLayers[index];
+      newLayers[index] = newLayers[index + 1];
+      newLayers[index + 1] = temp;
+    } else if (direction === 'down' && index > 0) {
+      const temp = newLayers[index];
+      newLayers[index] = newLayers[index - 1];
+      newLayers[index - 1] = temp;
     }
+    setLayers(newLayers);
+  };
+
+  const deleteLayer = () => {
+    if (!selectedLayerId) return;
+    setLayers(layers.filter((l) => l.id !== selectedLayerId));
+    setSelectedLayerId(null);
+  };
+
+  // Update Selected Layer Properties
+  const updateSelectedLayer = (updates: Partial<Layer>) => {
+    if (!selectedLayerId) return;
+    setLayers(layers.map((l) => (l.id === selectedLayerId ? { ...l, ...updates } : l)));
+  };
+
+  const updateSelectedLayerFilters = (updates: Partial<FilterSettings>) => {
+    if (!selectedLayerId) return;
+    setLayers(
+      layers.map((l) => {
+        if (l.id === selectedLayerId) {
+          return {
+            ...l,
+            filters: { ...l.filters, ...updates },
+          };
+        }
+        return l;
+      })
+    );
   };
 
   // Reset all edits
   const handleReset = () => {
-    setFilters(DEFAULT_FILTERS);
-    setTransforms(DEFAULT_TRANSFORMS);
-    setWarp(DEFAULT_WARP);
-    setTextLayers([]);
-    setSelectedTextId(null);
-    // Clear canvas if whiteboard
-    if (activeProject.type === 'whiteboard' && canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        drawGrid(ctx, canvasRef.current.width, canvasRef.current.height);
-      }
-    }
+    setLayers([]);
+    setSelectedLayerId(null);
+    setCanvasBgColor('#ffffff');
   };
 
-  // Draw background grid for whiteboard/canvas
-  const drawGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    ctx.strokeStyle = '#1f2937'; // zinc-800
-    ctx.lineWidth = 1;
-    const gridSize = 30;
-    for (let x = 0; x < width; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-    for (let y = 0; y < height; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
-  };
-
-  // Initialize and draw canvas
+  // Canvas Rendering Engine
   useEffect(() => {
     if (view !== 'editor' || !canvasRef.current) return;
 
@@ -294,163 +323,173 @@ export default function PhotoEditor() {
     canvas.width = baseWidth;
     canvas.height = baseHeight;
 
-    // Clear and draw background
-    ctx.fillStyle = '#09090b'; // zinc-950
+    // 1. Draw Clean Blank Base Canvas
+    ctx.fillStyle = canvasBgColor;
     ctx.fillRect(0, 0, baseWidth, baseHeight);
 
+    // 2. Draw Grid if Whiteboard
     if (activeProject.type === 'whiteboard') {
-      drawGrid(ctx, baseWidth, baseHeight);
+      ctx.strokeStyle = '#e5e7eb'; // light gray grid
+      ctx.lineWidth = 1;
+      const gridSize = 40;
+      for (let x = 0; x < baseWidth; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, baseHeight);
+        ctx.stroke();
+      }
+      for (let y = 0; y < baseHeight; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(baseWidth, y);
+        ctx.stroke();
+      }
     }
 
-    // Draw uploaded image if present
-    if (imageSrc) {
-      const img = new Image();
-      img.src = imageSrc;
-      img.onload = () => {
-        ctx.save();
-        
-        // Apply CSS-like filters to canvas context
-        ctx.filter = `
-          brightness(${filters.brightness}%) 
-          contrast(${filters.contrast}%) 
-          saturate(${filters.saturation}%) 
-          blur(${filters.blur}px) 
-          hue-rotate(${filters.hueRotate}deg)
-        `;
-
-        // Center and transform
-        ctx.translate(baseWidth / 2, baseHeight / 2);
-        ctx.rotate((transforms.rotation * Math.PI) / 180);
-        ctx.scale(transforms.flipH ? -1 : 1, transforms.flipV ? -1 : 1);
-
-        // Draw image scaled to fit canvas bounds with margins
-        const margin = activeProject.type === 'document' ? documentMargin * 4 : 0;
-        const maxW = baseWidth - margin;
-        const maxH = baseHeight - margin;
-        const imgRatio = img.width / img.height;
-        const canvasRatio = maxW / maxH;
-
-        let drawW = maxW;
-        let drawH = maxH;
-
-        if (imgRatio > canvasRatio) {
-          drawH = maxW / imgRatio;
-        } else {
-          drawW = maxH * imgRatio;
-        }
-
-        ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
-        ctx.restore();
-
-        // Draw Text Layers
-        drawTextLayers(ctx);
-      };
-    } else {
-      // Draw Text Layers even without image (for presentation/docs)
-      drawTextLayers(ctx);
-    }
-  }, [view, activeProject, imageSrc, filters, transforms, textLayers, documentMargin]);
-
-  const drawTextLayers = (ctx: CanvasRenderingContext2D) => {
-    textLayers.forEach((layer) => {
+    // 3. Draw Layers sequentially (z-index order)
+    layers.forEach((layer) => {
       ctx.save();
-      ctx.fillStyle = layer.color;
-      ctx.font = `bold ${layer.fontSize * 2}px sans-serif`;
-      ctx.textBaseline = 'top';
       
-      // Apply letter spacing simulation if needed
-      ctx.fillText(layer.text, layer.x * 2, layer.y * 2);
+      // Apply global layer opacity
+      ctx.globalAlpha = layer.opacity / 100;
+
+      // Translate to layer center for rotation & flips
+      const centerX = layer.x + layer.width / 2;
+      const centerY = layer.y + layer.height / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate((layer.rotation * Math.PI) / 180);
+      ctx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
+
+      // Apply filters if image layer
+      if (layer.type === 'image' && layer.imgElement) {
+        ctx.filter = `
+          brightness(${layer.filters.brightness}%) 
+          contrast(${layer.filters.contrast}%) 
+          saturate(${layer.filters.saturation}%) 
+          blur(${layer.filters.blur}px) 
+          hue-rotate(${layer.filters.hueRotate}deg)
+        `;
+        ctx.drawImage(
+          layer.imgElement, 
+          -layer.width / 2, 
+          -layer.height / 2, 
+          layer.width, 
+          layer.height
+        );
+      } else if (layer.type === 'text' && layer.text) {
+        ctx.fillStyle = layer.color || '#000000';
+        ctx.font = `bold ${layer.fontSize || 24}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(layer.text, 0, 0);
+      } else if (layer.type === 'shape') {
+        ctx.fillStyle = layer.color || '#a855f7';
+        if (layer.shapeType === 'rect') {
+          ctx.fillRect(-layer.width / 2, -layer.height / 2, layer.width, layer.height);
+        } else if (layer.shapeType === 'circle') {
+          ctx.beginPath();
+          ctx.arc(0, 0, Math.min(layer.width, layer.height) / 2, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
+
       ctx.restore();
+
+      // Draw selection bounding box if active
+      if (layer.id === selectedLayerId) {
+        ctx.save();
+        ctx.strokeStyle = '#6366f1'; // Indigo neon selection border
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 6]);
+        
+        const centerX = layer.x + layer.width / 2;
+        const centerY = layer.y + layer.height / 2;
+        ctx.translate(centerX, centerY);
+        ctx.rotate((layer.rotation * Math.PI) / 180);
+        
+        ctx.strokeRect(-layer.width / 2 - 4, -layer.height / 2 - 4, layer.width + 8, layer.height + 8);
+        
+        // Draw corner handles
+        ctx.fillStyle = '#a855f7';
+        const handleSize = 8;
+        ctx.fillRect(-layer.width / 2 - 8, -layer.height / 2 - 8, handleSize, handleSize);
+        ctx.fillRect(layer.width / 2, -layer.height / 2 - 8, handleSize, handleSize);
+        ctx.fillRect(-layer.width / 2 - 8, layer.height / 2, handleSize, handleSize);
+        ctx.fillRect(layer.width / 2, layer.height / 2, handleSize, handleSize);
+        
+        ctx.restore();
+      }
     });
-  };
+  }, [view, activeProject, layers, selectedLayerId, canvasBgColor]);
 
-  // Handle Whiteboard Drawing
+  // Interactive Canvas Dragging & Selection
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (activeProject.type !== 'whiteboard' || activeTool === 'select') return;
-    setIsDrawing(true);
-
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
 
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.strokeStyle = brushColor;
-    ctx.lineWidth = brushSize * 2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    // Find clicked layer (traverse backwards to select top-most layer first)
+    let foundLayerId: string | null = null;
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const layer = layers[i];
+      if (
+        clickX >= layer.x &&
+        clickX <= layer.x + layer.width &&
+        clickY >= layer.y &&
+        clickY <= layer.y + layer.height
+      ) {
+        foundLayerId = layer.id;
+        setIsDragging(true);
+        setDragStart({ x: clickX, y: clickY });
+        setLayerStartPos({ x: layer.x, y: layer.y });
+        break;
+      }
+    }
+
+    setSelectedLayerId(foundLayerId);
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || activeProject.type !== 'whiteboard') return;
+    if (!isDragging || !selectedLayerId) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
+    const currentX = (e.clientX - rect.left) * scaleX;
+    const currentY = (e.clientY - rect.top) * scaleY;
 
-    if (activeTool === 'brush') {
-      ctx.lineTo(x, y);
-      ctx.stroke();
-    } else if (activeTool === 'rect') {
-      // Simple preview or direct draw
-      ctx.fillStyle = brushColor;
-      ctx.fillRect(x - 15, y - 15, 30, 30);
-    } else if (activeTool === 'circle') {
-      ctx.fillStyle = brushColor;
-      ctx.beginPath();
-      ctx.arc(x, y, 20, 0, 2 * Math.PI);
-      ctx.fill();
-    }
+    const dx = currentX - dragStart.x;
+    const dy = currentY - dragStart.y;
+
+    updateSelectedLayer({
+      x: Math.round(layerStartPos.x + dx),
+      y: Math.round(layerStartPos.y + dy),
+    });
   };
 
   const handleCanvasMouseUp = () => {
-    setIsDrawing(false);
+    setIsDragging(false);
   };
 
-  // Add Text Layer
-  const addTextLayer = () => {
-    const newLayer: TextLayer = {
-      id: Date.now().toString(),
-      text: 'Double click to edit',
-      fontSize: 24,
-      color: '#ffffff',
-      letterSpacing: 0,
-      lineHeight: 1.2,
-      x: 50,
-      y: 50 + textLayers.length * 40,
-    };
-    setTextLayers([...textLayers, newLayer]);
-    setSelectedTextId(newLayer.id);
-  };
-
-  const updateSelectedText = (key: keyof TextLayer, value: any) => {
-    if (!selectedTextId) return;
-    setTextLayers(textLayers.map(layer => 
-      layer.id === selectedTextId ? { ...layer, [key]: value } : layer
-    ));
-  };
-
-  // Export edited image
+  // Export final canvas
   const handleExport = () => {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.95);
     const link = document.createElement('a');
-    link.download = `${activeProject.id}_export.jpg`;
+    link.download = `pixelcraft_${activeProject.id}_export.jpg`;
     link.href = dataUrl;
     link.click();
   };
+
+  const selectedLayer = layers.find((l) => l.id === selectedLayerId);
 
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
@@ -475,14 +514,14 @@ export default function PhotoEditor() {
               className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-400 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-all"
             >
               <ArrowLeft className="w-4 h-4" />
-              Back to Dashboard
+              Back to Home
             </button>
             <button
               onClick={handleReset}
               className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
             >
               <RotateCcw className="w-4 h-4" />
-              Reset
+              Reset Canvas
             </button>
             <button
               onClick={handleExport}
@@ -499,7 +538,11 @@ export default function PhotoEditor() {
       {view === 'dashboard' && (
         <div className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full flex flex-col justify-center">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-3">
+            {/* Hero Typography & Visual Hierarchy */}
+            <h1 className="text-6xl md:text-8xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 drop-shadow-[0_5px_15px_rgba(99,102,241,0.4)] uppercase font-mono mb-4">
+              PIXELCRAFT
+            </h1>
+            <h2 className="text-2xl font-bold tracking-tight text-zinc-200 mb-3">
               Select Your Creative Canvas
             </h2>
             <p className="text-zinc-400 max-w-xl mx-auto text-sm sm:text-base">
@@ -549,12 +592,7 @@ export default function PhotoEditor() {
           {/* Left/Center: Dynamic Canvas Preview Area */}
           <div 
             ref={containerRef}
-            className={`flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden transition-colors ${
-              isDragging ? 'bg-indigo-950/20 border-2 border-dashed border-indigo-500' : 'bg-zinc-950'
-            }`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
+            className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden bg-zinc-950"
           >
             {/* Dynamic Aspect Ratio Container */}
             <div 
@@ -577,314 +615,381 @@ export default function PhotoEditor() {
                   onMouseDown={handleCanvasMouseDown}
                   onMouseMove={handleCanvasMouseMove}
                   onMouseUp={handleCanvasMouseUp}
-                  className="w-full h-full object-contain cursor-crosshair"
+                  className="w-full h-full object-contain cursor-move"
                 />
-
-                {/* Perspective Warp Markers (Only for Image/Thumbnail/Instagram) */}
-                {activeProject.type === 'image' && imageSrc && (
-                  <div className="absolute inset-0 pointer-events-none">
-                    {/* Top Left Anchor */}
-                    <div 
-                      className="absolute w-4 h-4 border-2 border-pink-500 bg-zinc-950 rounded-full pointer-events-auto cursor-move shadow-lg shadow-pink-500/50"
-                      style={{ left: `${warp.topLeftX}%`, top: `${warp.topLeftY}%`, transform: 'translate(-50%, -50%)' }}
-                    />
-                    {/* Top Right Anchor */}
-                    <div 
-                      className="absolute w-4 h-4 border-2 border-pink-500 bg-zinc-950 rounded-full pointer-events-auto cursor-move shadow-lg shadow-pink-500/50"
-                      style={{ left: `${warp.topRightX}%`, top: `${warp.topRightY}%`, transform: 'translate(-50%, -50%)' }}
-                    />
-                    {/* Bottom Left Anchor */}
-                    <div 
-                      className="absolute w-4 h-4 border-2 border-pink-500 bg-zinc-950 rounded-full pointer-events-auto cursor-move shadow-lg shadow-pink-500/50"
-                      style={{ left: `${warp.bottomLeftX}%`, top: `${warp.bottomLeftY}%`, transform: 'translate(-50%, -50%)' }}
-                    />
-                    {/* Bottom Right Anchor */}
-                    <div 
-                      className="absolute w-4 h-4 border-2 border-pink-500 bg-zinc-950 rounded-full pointer-events-auto cursor-move shadow-lg shadow-pink-500/50"
-                      style={{ left: `${warp.bottomRightX}%`, top: `${warp.bottomRightY}%`, transform: 'translate(-50%, -50%)' }}
-                    />
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Upload Prompt Overlay if no image and not whiteboard */}
-            {!imageSrc && activeProject.type !== 'whiteboard' && (
-              <div 
+            {/* Quick Layer Import Bar */}
+            <div className="mt-4 flex items-center gap-3 bg-zinc-900/80 px-4 py-2.5 rounded-xl border border-zinc-800 backdrop-blur-md">
+              <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mr-2">Add Layer:</span>
+              <button
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute inset-0 m-auto max-w-md h-fit p-8 border-2 border-dashed border-zinc-800 hover:border-indigo-500/50 rounded-2xl bg-zinc-900/80 backdrop-blur-md hover:bg-zinc-900 transition-all cursor-pointer text-center group z-20"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
               >
-                <div className="w-14 h-14 bg-zinc-800 group-hover:bg-indigo-950/50 group-hover:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-4 transition-all">
-                  <Upload className="w-6 h-6 text-zinc-400 group-hover:text-indigo-400" />
-                </div>
-                <h3 className="text-base font-semibold text-zinc-200 mb-1">Upload base image</h3>
-                <p className="text-sm text-zinc-400 mb-4">Drag and drop your image here, or click to browse</p>
-                <span className="inline-block px-3 py-1.5 text-xs font-medium text-zinc-400 bg-zinc-800/80 rounded-md">
-                  Supports PNG, JPEG
-                </span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              </div>
-            )}
+                <Upload className="w-3.5 h-3.5" />
+                Image Layer
+              </button>
+              <button
+                onClick={addTextLayer}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+              >
+                <Type className="w-3.5 h-3.5" />
+                Text Layer
+              </button>
+              <button
+                onClick={() => addShapeLayer('rect')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+              >
+                <Square className="w-3.5 h-3.5" />
+                Rectangle
+              </button>
+              <button
+                onClick={() => addShapeLayer('circle')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+              >
+                <Circle className="w-3.5 h-3.5" />
+                Circle
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImportImage}
+                className="hidden"
+              />
+            </div>
           </div>
 
-          {/* Right Sidebar: Contextual Feature Sidebars */}
+          {/* Right Sidebar: Unified "Single-Tab" Properties Dashboard */}
           <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-zinc-800 bg-zinc-900/30 backdrop-blur-md flex flex-col h-[45vh] lg:h-full overflow-y-auto">
-            <div className="p-6 space-y-8">
+            <div className="p-6 space-y-6">
               
-              {/* Contextual Sidebar A: Thumbnail / Instagram Post */}
-              {activeProject.type === 'image' && (
-                <>
-                  {/* Presets */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Sparkles className="w-4 h-4 text-pink-400" />
-                      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Presets</h2>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {PRESETS.map((preset) => (
+              {/* Section 1: Global Canvas Settings */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Layout className="w-4 h-4 text-indigo-400" />
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Canvas Settings</h2>
+                </div>
+                <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-400">Active Template:</span>
+                    <span className="text-indigo-400 font-semibold">{activeProject.name}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-zinc-400">Aspect Ratio:</span>
+                    <span className="text-indigo-400 font-semibold">{activeProject.aspectRatio}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-zinc-400 block">Base Canvas Color</label>
+                    <div className="flex gap-2">
+                      {['#ffffff', '#f3f4f6', '#18181b', '#09090b', '#312e81'].map((color) => (
                         <button
-                          key={preset.name}
-                          onClick={() => setFilters(preset.filters)}
-                          className={`p-3 text-left rounded-xl border transition-all ${
-                            JSON.stringify(filters) === JSON.stringify(preset.filters)
-                              ? 'bg-pink-600/10 border-pink-500 text-pink-300' 
-                              : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-700 text-zinc-300'
+                          key={color}
+                          onClick={() => setCanvasBgColor(color)}
+                          className={`w-6 h-6 rounded-md border transition-all ${
+                            canvasBgColor === color ? 'border-indigo-500 scale-110' : 'border-zinc-800'
                           }`}
-                        >
-                          <div className="font-medium text-sm">{preset.name}</div>
-                        </button>
+                          style={{ backgroundColor: color }}
+                        />
                       ))}
                     </div>
                   </div>
+                </div>
+              </div>
 
-                  {/* Perspective Warp Controls */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Maximize2 className="w-4 h-4 text-pink-400" />
-                      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Perspective Warp</h2>
-                    </div>
-                    <div className="space-y-3 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] text-zinc-500">Top Left X</label>
-                          <input 
-                            type="range" min="0" max="50" value={warp.topLeftX} 
-                            onChange={(e) => setWarp({...warp, topLeftX: Number(e.target.value)})}
-                            className="w-full accent-pink-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] text-zinc-500">Top Right X</label>
-                          <input 
-                            type="range" min="50" max="100" value={warp.topRightX} 
-                            onChange={(e) => setWarp({...warp, topRightX: Number(e.target.value)})}
-                            className="w-full accent-pink-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
+              {/* Section 2: Layer List & Stacking */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-indigo-400" />
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Layers ({layers.length})</h2>
                   </div>
-
-                  {/* Adjustments */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Sliders className="w-4 h-4 text-pink-400" />
-                      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Adjustments</h2>
-                    </div>
-                    <div className="space-y-4">
-                      {/* Brightness */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-zinc-400">Brightness</span>
-                          <span className="text-pink-400">{filters.brightness}%</span>
-                        </div>
-                        <input
-                          type="range" min="0" max="200" value={filters.brightness}
-                          onChange={(e) => setFilters({...filters, brightness: Number(e.target.value)})}
-                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-pink-500"
-                        />
-                      </div>
-                      {/* Contrast */}
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-zinc-400">Contrast</span>
-                          <span className="text-pink-400">{filters.contrast}%</span>
-                        </div>
-                        <input
-                          type="range" min="0" max="200" value={filters.contrast}
-                          onChange={(e) => setFilters({...filters, contrast: Number(e.target.value)})}
-                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-pink-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Contextual Sidebar B: Presentation / Docs */}
-              {activeProject.type === 'document' && (
-                <>
-                  {/* Multi-page Navigation */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Layers className="w-4 h-4 text-cyan-400" />
-                      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Pages</h2>
-                    </div>
-                    <div className="flex items-center justify-between bg-zinc-900/50 p-3 rounded-xl border border-zinc-800">
-                      <button 
-                        disabled={currentPage === 1}
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        className="p-1.5 hover:bg-zinc-800 rounded-lg disabled:opacity-50"
-                      >
-                        <ChevronLeft className="w-5 h-5" />
-                      </button>
-                      <span className="text-sm font-medium">Page {currentPage} of {totalPages}</span>
-                      <button 
-                        disabled={currentPage === totalPages}
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        className="p-1.5 hover:bg-zinc-800 rounded-lg disabled:opacity-50"
-                      >
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Text Layer Inserts */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Type className="w-4 h-4 text-cyan-400" />
-                      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Typography</h2>
-                    </div>
-                    <button
-                      onClick={addTextLayer}
-                      className="w-full py-2.5 bg-cyan-600/10 hover:bg-cyan-600/20 border border-cyan-500/30 hover:border-cyan-500 text-cyan-300 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add Text Layer
-                    </button>
-
-                    {/* Active Text Layer Settings */}
-                    {selectedTextId && (
-                      <div className="mt-4 space-y-4 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
-                        <div>
-                          <label className="text-xs text-zinc-400">Text Content</label>
-                          <input
-                            type="text"
-                            value={textLayers.find(l => l.id === selectedTextId)?.text || ''}
-                            onChange={(e) => updateSelectedText('text', e.target.value)}
-                            className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-cyan-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-zinc-400">Font Size</label>
-                          <input
-                            type="range" min="12" max="72"
-                            value={textLayers.find(l => l.id === selectedTextId)?.fontSize || 24}
-                            onChange={(e) => updateSelectedText('fontSize', Number(e.target.value))}
-                            className="w-full accent-cyan-500"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Margins */}
-                  <div>
-                    <div className="flex items-center justify-between text-xs font-medium mb-2">
-                      <span className="text-zinc-400">Document Margins</span>
-                      <span className="text-cyan-400">{documentMargin}px</span>
-                    </div>
-                    <input
-                      type="range" min="0" max="100" value={documentMargin}
-                      onChange={(e) => setDocumentMargin(Number(e.target.value))}
-                      className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* Contextual Sidebar C: Whiteboard */}
-              {activeProject.type === 'whiteboard' && (
-                <>
-                  {/* Vector Shapes & Tools */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Brush className="w-4 h-4 text-amber-400" />
-                      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Drawing Tools</h2>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
+                  {selectedLayerId && (
+                    <div className="flex items-center gap-1">
                       <button
-                        onClick={() => setActiveTool('brush')}
-                        className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
-                          activeTool === 'brush' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-zinc-900/50 border-zinc-800 text-zinc-400'
-                        }`}
+                        onClick={() => moveLayer('up')}
+                        className="p-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300"
+                        title="Move Layer Up"
                       >
-                        <Brush className="w-5 h-5" />
-                        <span className="text-[10px]">Brush</span>
+                        <ChevronUp className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => setActiveTool('rect')}
-                        className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
-                          activeTool === 'rect' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-zinc-900/50 border-zinc-800 text-zinc-400'
-                        }`}
+                        onClick={() => moveLayer('down')}
+                        className="p-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300"
+                        title="Move Layer Down"
                       >
-                        <Square className="w-5 h-5" />
-                        <span className="text-[10px]">Square</span>
+                        <ChevronDown className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => setActiveTool('circle')}
-                        className={`p-3 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
-                          activeTool === 'circle' ? 'bg-amber-500/10 border-amber-500 text-amber-300' : 'bg-zinc-900/50 border-zinc-800 text-zinc-400'
-                        }`}
+                        onClick={deleteLayer}
+                        className="p-1 bg-red-950/50 hover:bg-red-900/50 rounded text-red-400 ml-1"
+                        title="Delete Layer"
                       >
-                        <Circle className="w-5 h-5" />
-                        <span className="text-[10px]">Circle</span>
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                  )}
+                </div>
+
+                {layers.length === 0 ? (
+                  <div className="text-center py-6 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-xl text-xs text-zinc-500">
+                    No layers added yet. Use the bar below the canvas to add layers.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {layers.map((layer) => (
+                      <div
+                        key={layer.id}
+                        onClick={() => setSelectedLayerId(layer.id)}
+                        className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                          layer.id === selectedLayerId
+                            ? 'bg-indigo-600/10 border-indigo-500 text-indigo-300'
+                            : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400'
+                        }`}
+                      >
+                        <span className="truncate font-medium">{layer.name}</span>
+                        <span className="text-[10px] text-zinc-500 uppercase">{layer.type}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Section 3: Selected Layer Properties (Unified Panel) */}
+              {selectedLayer ? (
+                <div className="space-y-5 pt-4 border-t border-zinc-800">
+                  <div className="flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-purple-400" />
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                      Properties: <span className="text-purple-400">{selectedLayer.name}</span>
+                    </h2>
                   </div>
 
-                  {/* Brush Properties */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Sliders className="w-4 h-4 text-amber-400" />
-                      <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Brush Properties</h2>
-                    </div>
-                    <div className="space-y-4 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
+                  {/* Text Specific Controls */}
+                  {selectedLayer.type === 'text' && (
+                    <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
                       <div>
-                        <label className="text-xs text-zinc-400 block mb-2">Brush Color</label>
+                        <label className="text-[11px] text-zinc-400 block mb-1">Text Content</label>
+                        <input
+                          type="text"
+                          value={selectedLayer.text || ''}
+                          onChange={(e) => updateSelectedLayer({ text: e.target.value })}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                          <span>Font Size</span>
+                          <span>{selectedLayer.fontSize}px</span>
+                        </div>
+                        <input
+                          type="range" min="12" max="120"
+                          value={selectedLayer.fontSize || 24}
+                          onChange={(e) => updateSelectedLayer({ fontSize: Number(e.target.value) })}
+                          className="w-full accent-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-zinc-400 block mb-1">Text Color</label>
                         <div className="flex gap-2">
-                          {['#a855f7', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ffffff'].map((color) => (
+                          {['#000000', '#ffffff', '#ef4444', '#3b82f6', '#10b981', '#f59e0b'].map((color) => (
                             <button
                               key={color}
-                              onClick={() => setBrushColor(color)}
-                              className={`w-6 h-6 rounded-full border-2 transition-all ${
-                                brushColor === color ? 'border-white scale-110' : 'border-transparent'
+                              onClick={() => updateSelectedLayer({ color })}
+                              className={`w-5 h-5 rounded-full border transition-all ${
+                                selectedLayer.color === color ? 'border-white scale-110' : 'border-transparent'
                               }`}
                               style={{ backgroundColor: color }}
                             />
                           ))}
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Shape Specific Controls */}
+                  {selectedLayer.type === 'shape' && (
+                    <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
                       <div>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="text-zinc-400">Brush Size</span>
-                          <span className="text-amber-400">{brushSize}px</span>
+                        <label className="text-[11px] text-zinc-400 block mb-1">Shape Color</label>
+                        <div className="flex gap-2">
+                          {['#a855f7', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ffffff'].map((color) => (
+                            <button
+                              key={color}
+                              onClick={() => updateSelectedLayer({ color })}
+                              className={`w-5 h-5 rounded-full border transition-all ${
+                                selectedLayer.color === color ? 'border-white scale-110' : 'border-transparent'
+                              }`}
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Transform & Position Controls */}
+                  <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-4">
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Transform & Position</h3>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] text-zinc-500">Position X</label>
                         <input
-                          type="range" min="1" max="50" value={brushSize}
-                          onChange={(e) => setBrushSize(Number(e.target.value))}
-                          className="w-full accent-amber-500"
+                          type="number"
+                          value={selectedLayer.x}
+                          onChange={(e) => updateSelectedLayer({ x: Number(e.target.value) })}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-zinc-500">Position Y</label>
+                        <input
+                          type="number"
+                          value={selectedLayer.y}
+                          onChange={(e) => updateSelectedLayer({ y: Number(e.target.value) })}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-zinc-500">Width</label>
+                        <input
+                          type="number"
+                          value={selectedLayer.width}
+                          onChange={(e) => updateSelectedLayer({ width: Number(e.target.value) })}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-zinc-500">Height</label>
+                        <input
+                          type="number"
+                          value={selectedLayer.height}
+                          onChange={(e) => updateSelectedLayer({ height: Number(e.target.value) })}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
                         />
                       </div>
                     </div>
+
+                    {/* Rotation */}
+                    <div>
+                      <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                        <span>Rotation</span>
+                        <span>{selectedLayer.rotation}°</span>
+                      </div>
+                      <input
+                        type="range" min="0" max="360"
+                        value={selectedLayer.rotation}
+                        onChange={(e) => updateSelectedLayer({ rotation: Number(e.target.value) })}
+                        className="w-full accent-purple-500"
+                      />
+                    </div>
+
+                    {/* Opacity */}
+                    <div>
+                      <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                        <span>Layer Opacity</span>
+                        <span>{selectedLayer.opacity}%</span>
+                      </div>
+                      <input
+                        type="range" min="0" max="100"
+                        value={selectedLayer.opacity}
+                        onChange={(e) => updateSelectedLayer({ opacity: Number(e.target.value) })}
+                        className="w-full accent-purple-500"
+                      />
+                    </div>
+
+                    {/* Flips */}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => updateSelectedLayer({ flipH: !selectedLayer.flipH })}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 border rounded-lg text-xs transition-all ${
+                          selectedLayer.flipH 
+                            ? 'bg-purple-600/10 border-purple-500 text-purple-300' 
+                            : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        <FlipHorizontal className="w-3.5 h-3.5" />
+                        Flip H
+                      </button>
+                      <button
+                        onClick={() => updateSelectedLayer({ flipV: !selectedLayer.flipV })}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 border rounded-lg text-xs transition-all ${
+                          selectedLayer.flipV 
+                            ? 'bg-purple-600/10 border-purple-500 text-purple-300' 
+                            : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        <FlipVertical className="w-3.5 h-3.5" />
+                        Flip V
+                      </button>
+                    </div>
                   </div>
-                </>
+
+                  {/* Image Filters (Only for Image Layers) */}
+                  {selectedLayer.type === 'image' && (
+                    <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-4">
+                      <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Filters & Adjustments</h3>
+                      
+                      {/* Brightness */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-zinc-400">Brightness</span>
+                          <span className="text-purple-400">{selectedLayer.filters.brightness}%</span>
+                        </div>
+                        <input
+                          type="range" min="0" max="200" value={selectedLayer.filters.brightness}
+                          onChange={(e) => updateSelectedLayerFilters({ brightness: Number(e.target.value) })}
+                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                        />
+                      </div>
+
+                      {/* Contrast */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-zinc-400">Contrast</span>
+                          <span className="text-purple-400">{selectedLayer.filters.contrast}%</span>
+                        </div>
+                        <input
+                          type="range" min="0" max="200" value={selectedLayer.filters.contrast}
+                          onChange={(e) => updateSelectedLayerFilters({ contrast: Number(e.target.value) })}
+                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                        />
+                      </div>
+
+                      {/* Saturation */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-zinc-400">Saturation</span>
+                          <span className="text-purple-400">{selectedLayer.filters.saturation}%</span>
+                        </div>
+                        <input
+                          type="range" min="0" max="200" value={selectedLayer.filters.saturation}
+                          onChange={(e) => updateSelectedLayerFilters({ saturation: Number(e.target.value) })}
+                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                        />
+                      </div>
+
+                      {/* Blur */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-zinc-400">Blur</span>
+                          <span className="text-purple-400">{selectedLayer.filters.blur}px</span>
+                        </div>
+                        <input
+                          type="range" min="0" max="20" value={selectedLayer.filters.blur}
+                          onChange={(e) => updateSelectedLayerFilters({ blur: Number(e.target.value) })}
+                          className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-xl text-xs text-zinc-500">
+                  Select a layer on the canvas or in the list to view and edit properties.
+                </div>
               )}
 
             </div>
