@@ -896,6 +896,33 @@ export default function PhotoEditor() {
     return lines;
   };
 
+  // Presentation Mode Slide Navigation Helpers
+  const selectSlide = (index: number) => {
+    setActiveSlideIndex(index);
+    setLayers(slides[index].layers);
+  };
+
+  const addSlide = () => {
+    const newSlideId = `slide-${slides.length + 1}`;
+    const newSlide = { id: newSlideId, layers: [], transition: 'fade' as const };
+    setSlides([...slides, newSlide]);
+    setActiveSlideIndex(slides.length);
+    setLayers([]);
+  };
+
+  const toggleTransition = (index: number) => {
+    const updated = [...slides];
+    updated[index].transition = updated[index].transition === 'fade' ? 'slide' : 'fade';
+    setSlides(updated);
+  };
+
+  const handlePresent = () => {
+    if (containerRef.current) {
+      containerRef.current.requestFullscreen().catch(() => {});
+      setIsFullscreenPresentation(true);
+    }
+  };
+
   // Canvas Rendering Engine
   useEffect(() => {
     if (view !== 'editor' || !canvasRef.current) return;
@@ -1714,7 +1741,7 @@ export default function PhotoEditor() {
               <h1 className="font-bold text-xl tracking-tight bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
                 Artisnap
               </h1>
-              <p className="text-xs text-zinc-400 hidden sm:block">Premium Creative Suite</p>
+              <p className={`text-xs hidden sm:block ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>Premium Creative Suite</p>
             </div>
           </div>
 
@@ -1790,7 +1817,7 @@ export default function PhotoEditor() {
               muted
               playsInline
               className="w-full h-full object-cover"
-              src="https://assets.mixkit.co/videos/preview/mixkit-abstract-laser-lights-background-32124-large.mp4"
+              src="https://cdn.pixabay.com/video/2018/09/19/18327-291012897_large.mp4"
             />
           </div>
 
@@ -1811,18 +1838,28 @@ export default function PhotoEditor() {
                 </p>
 
                 {/* Compact Single-Row Navigation */}
-                <div className="flex flex-wrap justify-center gap-4 max-w-5xl mx-auto bg-zinc-900/40 p-4 rounded-2xl border border-zinc-800/60 backdrop-blur-md">
+                <div className={`flex flex-wrap justify-center gap-4 max-w-5xl mx-auto p-4 rounded-2xl border backdrop-blur-md transition-colors ${
+                  theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-100/60 border-zinc-200'
+                }`}>
                   {PROJECT_TEMPLATES.map((project) => (
                     <div
                       key={project.id}
                       onClick={() => handleSelectProject(project)}
-                      className="group relative p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/60 hover:border-indigo-500/50 hover:bg-zinc-900/80 transition-all duration-300 cursor-pointer flex items-center gap-3 shadow-lg flex-1 min-w-[180px]"
+                      className={`group relative p-4 rounded-xl border hover:border-indigo-500/50 transition-all duration-300 cursor-pointer flex items-center gap-3 shadow-lg flex-1 min-w-[180px] ${
+                        theme === 'dark' 
+                          ? 'bg-zinc-950/60 border-zinc-800/60 hover:bg-zinc-900/80 text-zinc-100' 
+                          : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-900'
+                      }`}
                     >
-                      <div className="p-2 bg-zinc-800/60 rounded-lg group-hover:scale-110 transition-transform">
+                      <div className={`p-2 rounded-lg group-hover:scale-110 transition-transform ${
+                        theme === 'dark' ? 'bg-zinc-800/60' : 'bg-zinc-200/60'
+                      }`}>
                         {project.icon}
                       </div>
                       <div className="text-left">
-                        <h3 className="text-xs font-bold text-zinc-100 group-hover:text-indigo-300 transition-colors">
+                        <h3 className={`text-xs font-bold transition-colors ${
+                          theme === 'dark' ? 'text-zinc-100 group-hover:text-indigo-300' : 'text-zinc-800 group-hover:text-indigo-600'
+                        }`}>
                           {project.name}
                         </h3>
                         <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
@@ -1843,22 +1880,34 @@ export default function PhotoEditor() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Mock Recent Project Cards */}
-                  <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl hover:border-indigo-500 transition-all cursor-pointer">
-                    <div className="aspect-video bg-zinc-950 rounded-lg mb-3 flex items-center justify-center text-zinc-600">
+                  <div className={`p-4 rounded-xl border hover:border-indigo-500 transition-all cursor-pointer ${
+                    theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                  }`}>
+                    <div className={`aspect-video rounded-lg mb-3 flex items-center justify-center text-zinc-600 ${
+                      theme === 'dark' ? 'bg-zinc-950' : 'bg-zinc-100'
+                    }`}>
                       <ImageIcon className="w-8 h-8" />
                     </div>
                     <h3 className="font-bold text-sm">My Awesome Thumbnail</h3>
                     <p className="text-xs text-zinc-500">Edited 2 hours ago</p>
                   </div>
-                  <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl hover:border-indigo-500 transition-all cursor-pointer">
-                    <div className="aspect-video bg-zinc-950 rounded-lg mb-3 flex items-center justify-center text-zinc-600">
+                  <div className={`p-4 rounded-xl border hover:border-indigo-500 transition-all cursor-pointer ${
+                    theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                  }`}>
+                    <div className={`aspect-video rounded-lg mb-3 flex items-center justify-center text-zinc-600 ${
+                      theme === 'dark' ? 'bg-zinc-950' : 'bg-zinc-100'
+                    }`}>
                       <FileText className="w-8 h-8" />
                     </div>
                     <h3 className="font-bold text-sm">A4 Flyer Draft</h3>
                     <p className="text-xs text-zinc-500">Edited 1 day ago</p>
                   </div>
-                  <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl hover:border-indigo-500 transition-all cursor-pointer">
-                    <div className="aspect-video bg-zinc-950 rounded-lg mb-3 flex items-center justify-center text-zinc-600">
+                  <div className={`p-4 rounded-xl border hover:border-indigo-500 transition-all cursor-pointer ${
+                    theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                  }`}>
+                    <div className={`aspect-video rounded-lg mb-3 flex items-center justify-center text-zinc-600 ${
+                      theme === 'dark' ? 'bg-zinc-950' : 'bg-zinc-100'
+                    }`}>
                       <Palette className="w-8 h-8" />
                     </div>
                     <h3 className="font-bold text-sm">Infinite Whiteboard Sketch</h3>
@@ -1880,7 +1929,9 @@ export default function PhotoEditor() {
                       handleSelectProject(PROJECT_TEMPLATES[0]);
                       addImageLayerFromSrc('Cyberpunk Thumbnail', 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80', true);
                     }}
-                    className="group cursor-pointer bg-zinc-900/60 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                    className={`group cursor-pointer border hover:border-indigo-500 rounded-xl overflow-hidden transition-all ${
+                      theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                    }`}
                   >
                     <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&q=80" className="w-full h-32 object-cover group-hover:scale-105 transition-transform" alt="Cyberpunk" />
                     <div className="p-3">
@@ -1893,7 +1944,9 @@ export default function PhotoEditor() {
                       handleSelectProject(PROJECT_TEMPLATES[1]);
                       addImageLayerFromSrc('Minimalist Square', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80', true);
                     }}
-                    className="group cursor-pointer bg-zinc-900/60 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                    className={`group cursor-pointer border hover:border-indigo-500 rounded-xl overflow-hidden transition-all ${
+                      theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                    }`}
                   >
                     <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=500&q=80" className="w-full h-32 object-cover group-hover:scale-105 transition-transform" alt="Minimalist" />
                     <div className="p-3">
@@ -1906,9 +1959,13 @@ export default function PhotoEditor() {
                       handleSelectProject(PROJECT_TEMPLATES[2]);
                       addTextLayer('heading');
                     }}
-                    className="group cursor-pointer bg-zinc-900/60 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                    className={`group cursor-pointer border hover:border-indigo-500 rounded-xl overflow-hidden transition-all ${
+                      theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900 shadow-sm'
+                    }`}
                   >
-                    <div className="w-full h-32 bg-zinc-950 flex items-center justify-center text-zinc-500">
+                    <div className={`w-full h-32 flex items-center justify-center text-zinc-500 ${
+                      theme === 'dark' ? 'bg-zinc-950' : 'bg-zinc-100'
+                    }`}>
                       <FileText className="w-12 h-12" />
                     </div>
                     <div className="p-3">
@@ -1924,29 +1981,31 @@ export default function PhotoEditor() {
 
           {/* Floating Navigational Capsule Footer */}
           <div className="w-full flex justify-center pb-8 z-10">
-            <div className="flex items-center gap-6 px-8 py-3 rounded-full bg-zinc-900/90 border border-zinc-800/80 shadow-2xl backdrop-blur-md">
+            <div className={`flex items-center gap-6 px-8 py-3 rounded-full border backdrop-blur-md transition-colors ${
+              theme === 'dark' ? 'bg-zinc-900/90 border-zinc-800/80 shadow-2xl' : 'bg-white/90 border-zinc-200 shadow-lg'
+            }`}>
               <button
                 onClick={() => setDashboardSubView('home')}
                 className={`text-xs font-bold uppercase tracking-wider transition-all ${
-                  dashboardSubView === 'home' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-white'
+                  dashboardSubView === 'home' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
                 }`}
               >
                 Home
               </button>
-              <div className="h-4 w-[1px] bg-zinc-800" />
+              <div className={`h-4 w-[1px] ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
               <button
                 onClick={() => setDashboardSubView('projects')}
                 className={`text-xs font-bold uppercase tracking-wider transition-all ${
-                  dashboardSubView === 'projects' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-white'
+                  dashboardSubView === 'projects' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
                 }`}
               >
                 Projects
               </button>
-              <div className="h-4 w-[1px] bg-zinc-800" />
+              <div className={`h-4 w-[1px] ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
               <button
                 onClick={() => setDashboardSubView('templates')}
                 className={`text-xs font-bold uppercase tracking-wider transition-all ${
-                  dashboardSubView === 'templates' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-white'
+                  dashboardSubView === 'templates' ? 'text-indigo-400 scale-110' : 'text-zinc-400 hover:text-zinc-900'
                 }`}
               >
                 Templates
@@ -1963,11 +2022,13 @@ export default function PhotoEditor() {
           
           {/* Context-Aware Capsule Header - Hidden completely in full-screen presentation mode */}
           {!isFullscreenPresentation && (
-            <div className="w-full flex justify-center py-3 bg-zinc-950/40 border-b border-zinc-800/40 z-20">
+            <div className={`w-full flex justify-center py-3 border-b z-20 transition-colors ${
+              theme === 'dark' ? 'bg-zinc-950/40 border-zinc-800/40' : 'bg-zinc-100/40 border-zinc-200'
+            }`}>
               <div className={`flex items-center gap-4 px-6 py-2.5 rounded-full border shadow-xl backdrop-blur-md transition-all duration-300 ${
                 selectedLayer 
-                  ? 'bg-zinc-950 border-indigo-500/50 text-white' 
-                  : 'bg-zinc-900/40 border-zinc-800/60 text-zinc-600 cursor-not-allowed'
+                  ? (theme === 'dark' ? 'bg-zinc-950 border-indigo-500/50 text-white' : 'bg-white border-zinc-200 text-zinc-900 shadow-md') 
+                  : (theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60 text-zinc-600 cursor-not-allowed' : 'bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed')
               }`}>
                 {/* Multi-Select Cursor Tool */}
                 <button
@@ -1980,7 +2041,7 @@ export default function PhotoEditor() {
                   <MousePointer className="w-5 h-5" />
                 </button>
 
-                <div className="h-5 w-[1px] bg-zinc-800/60" />
+                <div className={`h-5 w-[1px] ${theme === 'dark' ? 'bg-zinc-800/60' : 'bg-zinc-200'}`} />
 
                 {/* Opacity Slider Overlay */}
                 <div className="flex items-center gap-2">
@@ -1996,7 +2057,7 @@ export default function PhotoEditor() {
                   />
                 </div>
 
-                <div className="h-5 w-[1px] bg-zinc-800/60" />
+                <div className={`h-5 w-[1px] ${theme === 'dark' ? 'bg-zinc-800/60' : 'bg-zinc-200'}`} />
 
                 {/* Text Alignment Controls */}
                 <div className="flex items-center gap-1">
@@ -2042,7 +2103,7 @@ export default function PhotoEditor() {
                   </button>
                 </div>
 
-                <div className="h-5 w-[1px] bg-zinc-800/60" />
+                <div className={`h-5 w-[1px] ${theme === 'dark' ? 'bg-zinc-800/60' : 'bg-zinc-200'}`} />
 
                 {/* Case Transformer */}
                 <button
@@ -2056,7 +2117,7 @@ export default function PhotoEditor() {
                   <CaseSensitive className="w-5 h-5" />
                 </button>
 
-                <div className="h-5 w-[1px] bg-zinc-800/60" />
+                <div className={`h-5 w-[1px] ${theme === 'dark' ? 'bg-zinc-800/60' : 'bg-zinc-200'}`} />
 
                 {/* Colour Picker */}
                 <div className="flex items-center gap-2">
@@ -2070,7 +2131,7 @@ export default function PhotoEditor() {
                   />
                 </div>
 
-                <div className="h-5 w-[1px] bg-zinc-800/60" />
+                <div className={`h-5 w-[1px] ${theme === 'dark' ? 'bg-zinc-800/60' : 'bg-zinc-200'}`} />
 
                 {/* Delete Layer */}
                 <button
@@ -2089,7 +2150,9 @@ export default function PhotoEditor() {
             
             {/* Minimalist Left Icon Panel - Single Vertical Column - Hidden in full-screen presentation mode */}
             {!isFullscreenPresentation && (
-              <div className="w-24 border-r border-zinc-800/60 bg-zinc-950 flex flex-col items-center py-6 gap-6 z-20 overflow-y-auto">
+              <div className={`w-24 border-r flex flex-col items-center py-6 gap-6 z-20 overflow-y-auto transition-colors ${
+                theme === 'dark' ? 'border-zinc-800/60 bg-zinc-950' : 'border-zinc-200 bg-white'
+              }`}>
                 {[
                   { id: 'templates', icon: <Layout className="w-10 h-10" />, label: 'Templates' },
                   { id: 'elements', icon: <Smile className="w-10 h-10" />, label: 'Elements' },
@@ -2104,12 +2167,14 @@ export default function PhotoEditor() {
                     className={`p-4 rounded-2xl transition-all relative group ${
                       activeLeftTab === tab.id 
                         ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
-                        : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                        : (theme === 'dark' ? 'text-zinc-400 hover:text-white hover:bg-zinc-900' : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100')
                     }`}
                     title={tab.label}
                   >
                     {tab.icon}
-                    <span className="absolute left-28 bg-zinc-950 text-white text-xs px-2.5 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30 border border-zinc-800">
+                    <span className={`absolute left-28 text-xs px-2.5 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30 border ${
+                      theme === 'dark' ? 'bg-zinc-950 text-white border-zinc-800' : 'bg-white text-zinc-900 border-zinc-200 shadow-md'
+                    }`}>
                       {tab.label}
                     </span>
                   </button>
@@ -2117,7 +2182,7 @@ export default function PhotoEditor() {
 
                 {/* Whiteboard Mode Left Panel Drawing Color Palette */}
                 {activeProject.type === 'whiteboard' && (
-                  <div className="mt-4 flex flex-col gap-2 border-t border-zinc-800/60 pt-4 w-full px-3">
+                  <div className={`mt-4 flex flex-col gap-2 border-t pt-4 w-full px-3 ${theme === 'dark' ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                     <span className="text-[10px] font-bold text-zinc-500 text-center uppercase tracking-wider">Brush</span>
                     <div className="grid grid-cols-2 gap-1.5">
                       {WHITEBOARD_COLORS.map((color) => (
@@ -2125,7 +2190,7 @@ export default function PhotoEditor() {
                           key={color}
                           onClick={() => setActiveBrushColor(color)}
                           className={`w-6 h-6 rounded-full border transition-all ${
-                            activeBrushColor === color ? 'border-white scale-110 ring-2 ring-indigo-500/50' : 'border-zinc-800'
+                            activeBrushColor === color ? 'border-white scale-110 ring-2 ring-indigo-500/50' : 'border-zinc-300'
                           }`}
                           style={{ backgroundColor: color }}
                           title={color}
@@ -2139,10 +2204,12 @@ export default function PhotoEditor() {
 
             {/* Interactive Drawer - Hidden in full-screen presentation mode */}
             {!isFullscreenPresentation && activeLeftTab && (
-              <div className="w-80 border-r border-zinc-800/60 bg-zinc-900/40 backdrop-blur-md flex flex-col z-10 transition-all duration-300">
-                <div className="p-4 border-b border-zinc-800/60 flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300">{activeLeftTab}</h3>
-                  <button onClick={() => setActiveLeftTab(null)} className="text-zinc-500 hover:text-white">
+              <div className={`w-80 border-r backdrop-blur-md flex flex-col z-10 transition-all duration-300 ${
+                theme === 'dark' ? 'border-zinc-800/60 bg-zinc-900/40' : 'border-zinc-200 bg-white/80'
+              }`}>
+                <div className={`p-4 border-b flex items-center justify-between ${theme === 'dark' ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
+                  <h3 className={`text-xs font-bold uppercase tracking-wider ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>{activeLeftTab}</h3>
+                  <button onClick={() => setActiveLeftTab(null)} className="text-zinc-500 hover:text-zinc-900">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                 </div>
@@ -2159,7 +2226,9 @@ export default function PhotoEditor() {
                         {/* Default Passive Income Template */}
                         <div 
                           onClick={() => addImageLayerFromSrc('Passive Income', 'https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=1200&q=80', true)}
-                          className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                          className={`group cursor-pointer border hover:border-indigo-500 rounded-xl overflow-hidden transition-all ${
+                            theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
+                          }`}
                         >
                           <div className="aspect-[9/16] w-full bg-zinc-900 relative overflow-hidden flex flex-col justify-end p-4">
                             <img src="https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=300&q=80" className="absolute inset-0 w-full h-full object-cover opacity-60" alt="Passive Income" />
@@ -2168,41 +2237,49 @@ export default function PhotoEditor() {
                               <h4 className="text-white font-black text-sm leading-tight mt-1 drop-shadow-md">PASSIVE INCOME IDEAS</h4>
                             </div>
                           </div>
-                          <div className="p-2 text-[11px] font-semibold text-zinc-300">Passive Income Ideas (9:16)</div>
+                          <div className={`p-2 text-[11px] font-semibold ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Passive Income Ideas (9:16)</div>
                         </div>
 
                         {activeProject.aspectRatio === '16:9' ? (
                           <>
                             <div 
                               onClick={() => addImageLayerFromSrc('Cyberpunk Thumbnail', 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80', true)}
-                              className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                              className={`group cursor-pointer border hover:border-indigo-500 rounded-xl overflow-hidden transition-all ${
+                                theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
+                              }`}
                             >
                               <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=300&q=80" className="w-full h-24 object-cover" alt="YouTube Template 1" />
-                              <div className="p-2 text-[11px] font-semibold text-zinc-300">Cyberpunk Thumbnail Layout</div>
+                              <div className={`p-2 text-[11px] font-semibold ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Cyberpunk Thumbnail Layout</div>
                             </div>
                             <div 
                               onClick={() => addImageLayerFromSrc('Gaming Stream', 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=1200&q=80', true)}
-                              className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                              className={`group cursor-pointer border hover:border-indigo-500 rounded-xl overflow-hidden transition-all ${
+                                theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
+                              }`}
                             >
                               <img src="https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=300&q=80" className="w-full h-24 object-cover" alt="YouTube Template 2" />
-                              <div className="p-2 text-[11px] font-semibold text-zinc-300">Gaming Stream Layout</div>
+                              <div className={`p-2 text-[11px] font-semibold ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Gaming Stream Layout</div>
                             </div>
                           </>
                         ) : (
                           <>
                             <div 
                               onClick={() => addImageLayerFromSrc('Minimalist Square', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80', true)}
-                              className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                              className={`group cursor-pointer border hover:border-indigo-500 rounded-xl overflow-hidden transition-all ${
+                                theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
+                              }`}
                             >
                               <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 1" />
-                              <div className="p-2 text-[11px] font-semibold text-zinc-300">Minimalist Square Post</div>
+                              <div className={`p-2 text-[11px] font-semibold ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Minimalist Square Post</div>
                             </div>
                             <div 
                               onClick={() => addImageLayerFromSrc('Neon Quote', 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=1200&q=80', true)}
-                              className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                              className={`group cursor-pointer border hover:border-indigo-500 rounded-xl overflow-hidden transition-all ${
+                                theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
+                              }`}
                             >
                               <img src="https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 2" />
-                              <div className="p-2 text-[11px] font-semibold text-zinc-300">Neon Quote Layout</div>
+                              <div className={`p-2 text-[11px] font-semibold ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Neon Quote Layout</div>
                             </div>
                           </>
                         )}
@@ -2230,7 +2307,9 @@ export default function PhotoEditor() {
                             <button
                               key={el.name}
                               onClick={() => addElementLayer(el.name, el.emoji)}
-                              className="p-2 bg-zinc-800/30 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-center text-lg transition-all"
+                              className={`p-2 border rounded-lg text-center text-lg transition-all ${
+                                theme === 'dark' ? 'bg-zinc-800/30 hover:bg-zinc-800/80 border-zinc-800/60' : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200'
+                              }`}
                             >
                               {el.emoji}
                             </button>
@@ -2248,7 +2327,9 @@ export default function PhotoEditor() {
                               <button
                                 key={idx}
                                 onClick={() => addShapeLayer(shape.type, shape.color)}
-                                className="p-2 bg-zinc-800/30 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg flex items-center justify-center"
+                                className={`p-2 border rounded-lg flex items-center justify-center ${
+                                  theme === 'dark' ? 'bg-zinc-800/30 hover:bg-zinc-800/80 border-zinc-800/60' : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200'
+                                }`}
                                 title={`Re-add ${shape.type}`}
                               >
                                 {shape.type === 'rect' ? (
@@ -2272,19 +2353,25 @@ export default function PhotoEditor() {
                         <div className="space-y-2">
                           <button
                             onClick={() => addTextLayer('heading')}
-                            className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-sm font-bold transition-all"
+                            className={`w-full py-2 px-3 border rounded-lg text-left text-sm font-bold transition-all ${
+                              theme === 'dark' ? 'bg-zinc-800/40 hover:bg-zinc-800/80 border-zinc-800/60' : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200'
+                            }`}
                           >
                             Add Heading
                           </button>
                           <button
                             onClick={() => addTextLayer('bold')}
-                            className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all"
+                            className={`w-full py-2 px-3 border rounded-lg text-left text-xs font-semibold transition-all ${
+                              theme === 'dark' ? 'bg-zinc-800/40 hover:bg-zinc-800/80 border-zinc-800/60' : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200'
+                            }`}
                           >
                             Add Subtitle
                           </button>
                           <button
                             onClick={() => addTextLayer('body')}
-                            className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-[11px] transition-all"
+                            className={`w-full py-2 px-3 border rounded-lg text-left text-[11px] transition-all ${
+                              theme === 'dark' ? 'bg-zinc-800/40 hover:bg-zinc-800/80 border-zinc-800/60' : 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200'
+                            }`}
                           >
                             Add Paragraph Text
                           </button>
@@ -2301,7 +2388,7 @@ export default function PhotoEditor() {
                               className={`w-full text-left px-2.5 py-1.5 rounded text-xs border transition-all ${
                                 selectedLayer?.fontFamily === font 
                                   ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' 
-                                  : 'bg-zinc-950/40 border-zinc-800/60 hover:border-zinc-700 text-zinc-300'
+                                  : (theme === 'dark' ? 'bg-zinc-950/40 border-zinc-800/60 hover:border-zinc-700 text-zinc-300' : 'bg-white border-zinc-200 hover:border-zinc-300 text-zinc-700')
                               }`}
                               style={{ fontFamily: font }}
                             >
@@ -2318,7 +2405,9 @@ export default function PhotoEditor() {
                     <div className="space-y-4">
                       <div 
                         onClick={() => bulkUploadInputRef.current?.click()}
-                        className="border-2 border-dashed border-zinc-800 hover:border-indigo-500/50 rounded-xl p-4 text-center cursor-pointer transition-all bg-zinc-950/20"
+                        className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
+                          theme === 'dark' ? 'border-zinc-800 hover:border-indigo-500/50 bg-zinc-950/20' : 'border-zinc-300 hover:border-indigo-500 bg-zinc-50'
+                        }`}
                       >
                         <Upload className="w-6 h-6 mx-auto text-zinc-500 mb-2" />
                         <span className="text-xs font-semibold text-zinc-300 block">Bulk Upload</span>
@@ -2341,7 +2430,9 @@ export default function PhotoEditor() {
                               <div 
                                 key={idx}
                                 onClick={() => addImageLayerFromSrc(img.name, img.src)}
-                                className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-lg overflow-hidden transition-all"
+                                className={`group cursor-pointer border hover:border-indigo-500 rounded-lg overflow-hidden transition-all ${
+                                  theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
+                                }`}
                               >
                                 <img src={img.src} className="w-full h-16 object-cover" alt={img.name} />
                                 <div className="p-1 text-[9px] text-zinc-400 truncate">{img.name}</div>
@@ -2362,7 +2453,7 @@ export default function PhotoEditor() {
                           setSelectedLayerId(null);
                         }}
                         className={`w-full py-2.5 px-3 border rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2 ${
-                          activeTool === 'pointer' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80'
+                          activeTool === 'pointer' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : (theme === 'dark' ? 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200')
                         }`}
                       >
                         <MousePointer className="w-4 h-4 text-indigo-400" />
@@ -2374,7 +2465,7 @@ export default function PhotoEditor() {
                           setSelectedLayerId(null);
                         }}
                         className={`w-full py-2.5 px-3 border rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2 ${
-                          activeTool === 'draw' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80'
+                          activeTool === 'draw' ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : (theme === 'dark' ? 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200')
                         }`}
                       >
                         <PenTool className="w-4 h-4 text-indigo-400" />
@@ -2382,28 +2473,36 @@ export default function PhotoEditor() {
                       </button>
                       <button
                         onClick={() => addShapeLayer('rect')}
-                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                        className={`w-full py-2.5 px-3 border rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2 ${
+                          theme === 'dark' ? 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200'
+                        }`}
                       >
                         <Square className="w-4 h-4 text-indigo-400" />
                         Vector Rectangle
                       </button>
                       <button
                         onClick={() => addShapeLayer('circle')}
-                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                        className={`w-full py-2.5 px-3 border rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2 ${
+                          theme === 'dark' ? 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200'
+                        }`}
                       >
                         <Circle className="w-4 h-4 text-indigo-400" />
                         Vector Circle
                       </button>
                       <button
                         onClick={addStickyNote}
-                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                        className={`w-full py-2.5 px-3 border rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2 ${
+                          theme === 'dark' ? 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200'
+                        }`}
                       >
                         <StickyNote className="w-4 h-4 text-indigo-400" />
                         Sticky Note
                       </button>
                       <button
                         onClick={() => addTextLayer()}
-                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                        className={`w-full py-2.5 px-3 border rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2 ${
+                          theme === 'dark' ? 'bg-zinc-800/40 border-zinc-800/60 hover:bg-zinc-800/80' : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200'
+                        }`}
                       >
                         <Type className="w-4 h-4 text-indigo-400" />
                         Inline Floating Text
@@ -2414,15 +2513,15 @@ export default function PhotoEditor() {
                   {/* Shortcuts Drawer */}
                   {activeLeftTab === 'shortcuts' && (
                     <div className="space-y-2 text-xs text-zinc-400">
-                      <div className="flex justify-between py-1 border-b border-zinc-800/40">
+                      <div className={`flex justify-between py-1 border-b ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                         <span>Delete Layer</span>
                         <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-[10px]">Del</kbd>
                       </div>
-                      <div className="flex justify-between py-1 border-b border-zinc-800/40">
+                      <div className={`flex justify-between py-1 border-b ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                         <span>Move Layer Up</span>
                         <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-[10px]">Ctrl + Up</kbd>
                       </div>
-                      <div className="flex justify-between py-1 border-b border-zinc-800/40">
+                      <div className={`flex justify-between py-1 border-b ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                         <span>Move Layer Down</span>
                         <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-[10px]">Ctrl + Down</kbd>
                       </div>
@@ -2661,39 +2760,51 @@ export default function PhotoEditor() {
 
               {/* Quick Layer Import Bar - Hidden in full-screen presentation mode */}
               {!isFullscreenPresentation && (
-                <div className="mt-4 flex items-center gap-3 bg-zinc-900/80 px-4 py-2.5 rounded-xl border border-zinc-800/60 backdrop-blur-md shadow-lg">
+                <div className={`mt-4 flex items-center gap-3 px-4 py-2.5 rounded-xl border backdrop-blur-md shadow-lg transition-colors ${
+                  theme === 'dark' ? 'bg-zinc-900/80 border-zinc-800/60' : 'bg-white/80 border-zinc-200'
+                }`}>
                   <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mr-2">Add Layer:</span>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                      theme === 'dark' ? 'text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700' : 'text-zinc-700 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200'
+                    }`}
                   >
                     <Upload className="w-3.5 h-3.5" />
                     Image Layer
                   </button>
                   <button
                     onClick={() => setShowMemeModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                      theme === 'dark' ? 'text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700' : 'text-zinc-700 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200'
+                    }`}
                   >
                     <Smile className="w-3.5 h-3.5 text-amber-400" />
                     Memes
                   </button>
                   <button
                     onClick={() => addTextLayer()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                      theme === 'dark' ? 'text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700' : 'text-zinc-700 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200'
+                    }`}
                   >
                     <Type className="w-3.5 h-3.5" />
                     Text Layer
                   </button>
                   <button
                     onClick={() => addShapeLayer('rect')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                      theme === 'dark' ? 'text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700' : 'text-zinc-700 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200'
+                    }`}
                   >
                     <Square className="w-3.5 h-3.5" />
                     Rectangle
                   </button>
                   <button
                     onClick={() => addShapeLayer('circle')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                      theme === 'dark' ? 'text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700' : 'text-zinc-700 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200'
+                    }`}
                   >
                     <Circle className="w-3.5 h-3.5" />
                     Circle
@@ -2711,7 +2822,9 @@ export default function PhotoEditor() {
 
             {/* Right Sidebar: Interactive Advanced Property Bar - Hidden in full-screen presentation mode */}
             {!isFullscreenPresentation && (
-              <div className="w-full lg:w-96 border-l border-zinc-800/60 bg-zinc-900/20 backdrop-blur-md flex flex-col h-full overflow-y-auto">
+              <div className={`w-full lg:w-96 border-l backdrop-blur-md flex flex-col h-full overflow-y-auto transition-colors ${
+                theme === 'dark' ? 'border-zinc-800/60 bg-zinc-900/20' : 'border-zinc-200 bg-white/80'
+              }`}>
                 <div className="p-6 space-y-6">
                   
                   {/* Section 1: Global Canvas Settings */}
@@ -2720,7 +2833,9 @@ export default function PhotoEditor() {
                       <Layout className="w-4 h-4 text-indigo-400" />
                       <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Canvas Settings</h2>
                     </div>
-                    <div className="bg-zinc-900/40 p-4 rounded-xl border border-zinc-800/60 space-y-3 shadow-md">
+                    <div className={`p-4 rounded-xl border space-y-3 shadow-md transition-colors ${
+                      theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                    }`}>
                       <div className="flex justify-between text-xs">
                         <span className="text-zinc-400">Active Template:</span>
                         <span className="text-indigo-400 font-semibold">{activeProject.name}</span>
@@ -2737,7 +2852,7 @@ export default function PhotoEditor() {
                               key={color}
                               onClick={() => setCanvasBgColor(color)}
                               className={`w-6 h-6 rounded-md border transition-all ${
-                                canvasBgColor === color ? 'border-indigo-500 scale-110' : 'border-zinc-800/60'
+                                canvasBgColor === color ? 'border-indigo-500 scale-110' : 'border-zinc-300'
                               }`}
                               style={{ backgroundColor: color }}
                             />
@@ -2782,7 +2897,9 @@ export default function PhotoEditor() {
                     </div>
 
                     {layers.length === 0 ? (
-                      <div className="text-center py-6 bg-zinc-900/20 border border-dashed border-zinc-800/60 rounded-xl text-xs text-zinc-500">
+                      <div className={`text-center py-6 border border-dashed rounded-xl text-xs text-zinc-500 ${
+                        theme === 'dark' ? 'bg-zinc-900/20 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                      }`}>
                         No layers added yet. Use the bar below the canvas to add layers.
                       </div>
                     ) : (
@@ -2797,7 +2914,7 @@ export default function PhotoEditor() {
                             className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs cursor-pointer transition-all ${
                               selectedLayerIds.includes(layer.id)
                                 ? 'bg-indigo-600/10 border-indigo-500 text-indigo-300'
-                                : 'bg-zinc-900/40 border-zinc-800/60 hover:border-zinc-700 text-zinc-400'
+                                : (theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60 hover:border-zinc-700 text-zinc-400' : 'bg-white border-zinc-200 hover:border-zinc-300 text-zinc-700')
                             }`}
                           >
                             <span className="truncate font-medium">{layer.name}</span>
@@ -2810,7 +2927,7 @@ export default function PhotoEditor() {
 
                   {/* Section 3: Selected Layer Properties (Restructured Priority Layout) */}
                   {selectedLayer ? (
-                    <div className="space-y-4 pt-4 border-t border-zinc-800/60">
+                    <div className={`space-y-4 pt-4 border-t ${theme === 'dark' ? 'border-zinc-800/60' : 'border-zinc-200'}`}>
                       <div className="flex items-center gap-2 mb-2">
                         <Sliders className="w-4 h-4 text-purple-400" />
                         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
@@ -2821,27 +2938,29 @@ export default function PhotoEditor() {
                       {/* [TOP OF RIGHT PANEL]: Rotation, Duplicate, Flip, and Crop/Warp Split Modules */}
                       
                       {/* Rotation Module */}
-                      <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
+                        theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                      }`}>
                         <button
                           onClick={() => toggleAccordion('rotation')}
                           className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
                         >
-                          <span>Rotation & Actions</span>
+                          <span className={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>Rotation & Actions</span>
                           <RotateCw className="w-4 h-4 text-zinc-500" />
                         </button>
                         {rightAccordion.rotation && (
-                          <div className="p-4 border-t border-zinc-800/40 space-y-4">
+                          <div className={`p-4 border-t space-y-4 ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                             <div className="flex gap-2">
                               <button
                                 onClick={() => updateSelectedLayer({ rotation: (selectedLayer.rotation - 90) % 360 })}
-                                className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                                className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 text-white"
                               >
                                 <RotateCcw className="w-3.5 h-3.5" />
                                 90° CCW
                               </button>
                               <button
                                 onClick={() => updateSelectedLayer({ rotation: (selectedLayer.rotation + 90) % 360 })}
-                                className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                                className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 text-white"
                               >
                                 <RotateCw className="w-3.5 h-3.5" />
                                 90° CW
@@ -2871,9 +2990,11 @@ export default function PhotoEditor() {
                       </div>
 
                       {/* Mirror & Flip Controls */}
-                      <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
+                        theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                      }`}>
                         <div className="px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300">
-                          <span>Mirror & Flip Controls</span>
+                          <span className={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>Mirror & Flip Controls</span>
                           <div className="flex gap-2">
                             <button
                               onClick={() => updateSelectedLayer({ flipH: !selectedLayer.flipH })}
@@ -2899,19 +3020,21 @@ export default function PhotoEditor() {
 
                       {/* Crop & Warp Split Modules */}
                       {(selectedLayer.type === 'image' || selectedLayer.type === 'element') && (
-                        <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                        <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
+                          theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                        }`}>
                           <button
                             onClick={() => toggleAccordion('crop')}
                             className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
                           >
-                            <span>Crop & Perspective Splitter</span>
+                            <span className={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>Crop & Perspective Splitter</span>
                             <Maximize2 className="w-4 h-4 text-zinc-500" />
                           </button>
                           {rightAccordion.crop && (
-                            <div className="p-4 border-t border-zinc-800/40 space-y-4">
+                            <div className={`p-4 border-t space-y-4 ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <span className="text-xs font-semibold text-zinc-300 block">Perspective Warp Mode</span>
+                                  <span className={`text-xs font-semibold block ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Perspective Warp Mode</span>
                                   <span className="text-[10px] text-zinc-500">Drag corners independently to distort</span>
                                 </div>
                                 <button
@@ -2934,10 +3057,10 @@ export default function PhotoEditor() {
                               </div>
 
                               {/* Unconstrained Freeform Crop Engine */}
-                              <div className="flex flex-col border-t border-zinc-800/40 pt-3 gap-2">
+                              <div className={`flex flex-col border-t pt-3 gap-2 ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                                 <div className="flex items-center justify-between">
                                   <div>
-                                    <span className="text-xs font-semibold text-zinc-300 block">Freeform Crop Mode</span>
+                                    <span className={`text-xs font-semibold block ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Freeform Crop Mode</span>
                                     <span className="text-[10px] text-zinc-500">Trim image dimensions instantly</span>
                                   </div>
                                   <button
@@ -2964,7 +3087,9 @@ export default function PhotoEditor() {
                                 </div>
 
                                 {selectedLayer.cropMode && cropBox && (
-                                  <div className="bg-zinc-950/40 p-3 rounded-lg space-y-2 border border-zinc-800">
+                                  <div className={`p-3 rounded-lg space-y-2 border ${
+                                    theme === 'dark' ? 'bg-zinc-950/40 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
+                                  }`}>
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Crop Boundaries</span>
                                     <div className="grid grid-cols-2 gap-2">
                                       <div>
@@ -2994,23 +3119,27 @@ export default function PhotoEditor() {
 
                       {/* Typography & Text Box (High Priority for Text Layers) */}
                       {selectedLayer.type === 'text' && (
-                        <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                        <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
+                          theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                        }`}>
                           <button
                             onClick={() => toggleAccordion('text')}
                             className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
                           >
-                            <span>Typography & Text Box</span>
+                            <span className={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>Typography & Text Box</span>
                             <Type className="w-4 h-4 text-zinc-500" />
                           </button>
                           {rightAccordion.text && (
-                            <div className="p-4 border-t border-zinc-800/40 space-y-4">
+                            <div className={`p-4 border-t space-y-4 ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                               <div>
                                 <label className="text-[11px] text-zinc-400 block mb-1">Text Content</label>
                                 <input
                                   type="text"
                                   value={selectedLayer.text || ''}
                                   onChange={(e) => updateSelectedLayer({ text: e.target.value })}
-                                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                                  className={`w-full border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500 ${
+                                    theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-300 text-zinc-900'
+                                  }`}
                                 />
                               </div>
                               <div>
@@ -3060,16 +3189,18 @@ export default function PhotoEditor() {
                       {/* [BOTTOM OF RIGHT PANEL]: Advanced color filtering adjustments, sliders, and opacity presets */}
                       
                       {/* Opacity & Layer Alpha */}
-                      <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
+                        theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                      }`}>
                         <button
                           onClick={() => toggleAccordion('opacity')}
                           className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
                         >
-                          <span>Opacity & Layer Alpha</span>
+                          <span className={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>Opacity & Layer Alpha</span>
                           <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${rightAccordion.opacity ? 'rotate-180' : ''}`} />
                         </button>
                         {rightAccordion.opacity && (
-                          <div className="p-4 border-t border-zinc-800/40 space-y-4">
+                          <div className={`p-4 border-t space-y-4 ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                             <div>
                               <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
                                 <span>Layer Opacity</span>
@@ -3087,16 +3218,18 @@ export default function PhotoEditor() {
                       </div>
 
                       {/* Filters & Adjustments */}
-                      <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <div className={`border rounded-xl overflow-hidden shadow-sm transition-colors ${
+                        theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                      }`}>
                         <button
                           onClick={() => toggleAccordion('filters')}
                           className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
                         >
-                          <span>Filters & Adjustments</span>
+                          <span className={theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}>Filters & Adjustments</span>
                           <Sliders className="w-4 h-4 text-zinc-500" />
                         </button>
                         {rightAccordion.filters && (
-                          <div className="p-4 border-t border-zinc-800/40 space-y-4">
+                          <div className={`p-4 border-t space-y-4 ${theme === 'dark' ? 'border-zinc-800/40' : 'border-zinc-200'}`}>
                             {/* Brightness */}
                             <div className="space-y-1">
                               <div className="flex justify-between text-xs">
@@ -3167,7 +3300,9 @@ export default function PhotoEditor() {
 
                     </div>
                   ) : (
-                    <div className="text-center py-8 bg-zinc-900/20 border border-dashed border-zinc-800/60 rounded-xl text-xs text-zinc-500">
+                    <div className={`text-center py-8 border border-dashed rounded-xl text-xs text-zinc-500 ${
+                      theme === 'dark' ? 'bg-zinc-900/20 border-zinc-800/60' : 'bg-zinc-50 border-zinc-200'
+                    }`}>
                       Select a layer on the canvas or in the list to view and edit properties.
                     </div>
                   )}
