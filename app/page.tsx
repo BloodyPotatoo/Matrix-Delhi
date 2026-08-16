@@ -1120,6 +1120,63 @@ export default function PhotoEditor() {
     };
   }, [isDragging, selectedLayerId, activeHandle, dragStart, layers, layerStartCorners, layerStartPos, layerStartSize]);
 
+  // Global Window Listeners for Rubber-band selection to prevent hold glitch and out-of-canvas issues
+  useEffect(() => {
+    if (!isRubberBanding) return;
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      // Clamp coordinates to canvas boundaries to prevent drawing rubber-band outside the canvas
+      let currentX = (e.clientX - rect.left) * scaleX;
+      let currentY = (e.clientY - rect.top) * scaleY;
+
+      currentX = Math.max(0, Math.min(canvas.width, currentX));
+      currentY = Math.max(0, Math.min(canvas.height, currentY));
+
+      setRubberBandCurrent({ x: currentX, y: currentY });
+    };
+
+    const handleWindowMouseUp = () => {
+      setIsRubberBanding(false);
+
+      const rx = Math.min(rubberBandStart.x, rubberBandCurrent.x);
+      const ry = Math.min(rubberBandStart.y, rubberBandCurrent.y);
+      const rw = Math.abs(rubberBandStart.x - rubberBandCurrent.x);
+      const rh = Math.abs(rubberBandStart.y - rubberBandCurrent.y);
+
+      // Find all layers intersecting with the rubber-band box
+      const selected = layers.filter((layer) => {
+        const layerMaxX = layer.x + layer.width;
+        const layerMaxY = layer.y + layer.height;
+        return (
+          layer.x < rx + rw &&
+          layerMaxX > rx &&
+          layer.y < ry + rh &&
+          layerMaxY > ry
+        );
+      }).map((l) => l.id);
+
+      setSelectedLayerIds(selected);
+      if (selected.length > 0) {
+        setSelectedLayerId(selected[0]);
+      }
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [isRubberBanding, rubberBandStart, rubberBandCurrent, layers]);
+
   // Interactive Canvas Dragging, Selection & Corner Handle Transformations
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -1269,51 +1326,6 @@ export default function PhotoEditor() {
       setRubberBandCurrent({ x: clickX, y: clickY });
       setSelectedLayerId(null);
       setSelectedLayerIds([]);
-    }
-  };
-
-  // Handle Rubber-band selection movement
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isRubberBanding) return;
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const currentX = (e.clientX - rect.left) * scaleX;
-    const currentY = (e.clientY - rect.top) * scaleY;
-
-    setRubberBandCurrent({ x: currentX, y: currentY });
-  };
-
-  // Handle Rubber-band selection end
-  const handleCanvasMouseUp = () => {
-    if (!isRubberBanding) return;
-
-    setIsRubberBanding(false);
-
-    const rx = Math.min(rubberBandStart.x, rubberBandCurrent.x);
-    const ry = Math.min(rubberBandStart.y, rubberBandCurrent.y);
-    const rw = Math.abs(rubberBandStart.x - rubberBandCurrent.x);
-    const rh = Math.abs(rubberBandStart.y - rubberBandCurrent.y);
-
-    // Find all layers intersecting with the rubber-band box
-    const selected = layers.filter((layer) => {
-      const layerMaxX = layer.x + layer.width;
-      const layerMaxY = layer.y + layer.height;
-      return (
-        layer.x < rx + rw &&
-        layerMaxX > rx &&
-        layer.y < ry + rh &&
-        layerMaxY > ry
-      );
-    }).map((l) => l.id);
-
-    setSelectedLayerIds(selected);
-    if (selected.length > 0) {
-      setSelectedLayerId(selected[0]);
     }
   };
 
@@ -1897,8 +1909,6 @@ export default function PhotoEditor() {
                   <canvas
                     ref={canvasRef}
                     onMouseDown={handleCanvasMouseDown}
-                    onMouseMove={handleCanvasMouseMove}
-                    onMouseUp={handleCanvasMouseUp}
                     className="w-full h-full object-contain cursor-crosshair"
                   />
                 </div>
