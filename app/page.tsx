@@ -45,7 +45,8 @@ import {
   StickyNote,
   MousePointer,
   PenTool,
-  Crop
+  Crop,
+  Play
 } from 'lucide-react';
 
 // Types & Interfaces
@@ -229,6 +230,15 @@ export default function PhotoEditor() {
   // Zoom Engine State
   const [zoom, setZoom] = useState<number>(100);
 
+  // Document Mode Multi-Page State
+  const [docPages, setDocPages] = useState<number>(1);
+
+  // Presentation Mode Slides State
+  const [slides, setSlides] = useState<{ id: string; layers: Layer[]; transition: 'fade' | 'slide' }[]>([
+    { id: 'slide-1', layers: [], transition: 'fade' }
+  ]);
+  const [activeSlideIndex, setActiveSlideIndex] = useState<number>(0);
+
   // Layer Engine State
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -255,7 +265,6 @@ export default function PhotoEditor() {
 
   // Freeform Crop State
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [isCropping, setIsCropping] = useState(false);
 
   // Global Canvas Settings
   const [canvasBgColor, setCanvasBgColor] = useState<string>('#ffffff');
@@ -290,8 +299,16 @@ export default function PhotoEditor() {
     setLayers([]);
     setSelectedLayerId(null);
     setSelectedLayerIds([]);
-    setActiveLeftTab('templates');
     setZoom(100);
+    setDocPages(1);
+    setSlides([{ id: 'slide-1', layers: [], transition: 'fade' }]);
+    setActiveSlideIndex(0);
+
+    if (project.id === 'docs') {
+      setActiveLeftTab('texts'); // Focus Left Drawer on Typography inserts first
+    } else {
+      setActiveLeftTab('templates');
+    }
   };
 
   // Helper to generate default corners based on position and size
@@ -336,14 +353,14 @@ export default function PhotoEditor() {
     }
   };
 
-  const addImageLayerFromSrc = (name: string, src: string) => {
+  const addImageLayerFromSrc = (name: string, src: string, isBackground = false) => {
     const img = new Image();
     img.src = src;
     img.onload = () => {
-      const width = img.width > 400 ? 400 : img.width;
-      const height = img.width > 400 ? (400 / img.width) * img.height : img.height;
-      const x = 100;
-      const y = 100;
+      const width = isBackground ? 1200 : (img.width > 400 ? 400 : img.width);
+      const height = isBackground ? (1200 / img.width) * img.height : (img.width > 400 ? (400 / img.width) * img.height : img.height);
+      const x = isBackground ? 0 : 100;
+      const y = isBackground ? 0 : 100;
       const newLayer: Layer = {
         id: Date.now().toString(),
         type: 'image',
@@ -363,7 +380,7 @@ export default function PhotoEditor() {
         flipV: false,
         filters: { ...DEFAULT_FILTERS },
       };
-      setLayers((prev) => [...prev, newLayer]);
+      setLayers((prev) => isBackground ? [newLayer, ...prev] : [...prev, newLayer]);
       setSelectedLayerId(newLayer.id);
       setSelectedLayerIds([newLayer.id]);
     };
@@ -652,6 +669,9 @@ export default function PhotoEditor() {
     setSelectedLayerIds([]);
     setCanvasBgColor('#ffffff');
     setZoom(100);
+    setDocPages(1);
+    setSlides([{ id: 'slide-1', layers: [], transition: 'fade' }]);
+    setActiveSlideIndex(0);
   };
 
   // Affine Triangle Texture Mapper for Perspective Warp
@@ -747,9 +767,14 @@ export default function PhotoEditor() {
 
     // Set high-res canvas dimensions based on aspect ratio
     const baseWidth = 1200;
-    const baseHeight = activeProject.aspectRatio === 'freeform' 
+    let baseHeight = activeProject.aspectRatio === 'freeform' 
       ? 800 
       : Math.round(baseWidth / activeProject.ratioValue);
+
+    // Document Mode Multi-Page Height Multiplier
+    if (activeProject.id === 'docs') {
+      baseHeight = baseHeight * docPages;
+    }
 
     canvas.width = baseWidth;
     canvas.height = baseHeight;
@@ -757,6 +782,21 @@ export default function PhotoEditor() {
     // 1. Draw Clean Blank Base Canvas
     ctx.fillStyle = canvasBgColor;
     ctx.fillRect(0, 0, baseWidth, baseHeight);
+
+    // Draw page dividers for Document Mode
+    if (activeProject.id === 'docs' && docPages > 1) {
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 10]);
+      const singlePageHeight = Math.round(baseWidth / activeProject.ratioValue);
+      for (let p = 1; p < docPages; p++) {
+        ctx.beginPath();
+        ctx.moveTo(0, singlePageHeight * p);
+        ctx.lineTo(baseWidth, singlePageHeight * p);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
 
     // 2. Draw Grid if Whiteboard
     if (activeProject.type === 'whiteboard') {
@@ -998,7 +1038,7 @@ export default function PhotoEditor() {
       ctx.strokeRect(rx, ry, rw, rh);
       ctx.restore();
     }
-  }, [view, activeProject, layers, selectedLayerId, selectedLayerIds, canvasBgColor, isRubberBanding, rubberBandStart, rubberBandCurrent, cropBox]);
+  }, [view, activeProject, layers, selectedLayerId, selectedLayerIds, canvasBgColor, isRubberBanding, rubberBandStart, rubberBandCurrent, cropBox, docPages]);
 
   // Global Window Dragging & Mouse Up Listeners to prevent stuck dragging outside canvas
   useEffect(() => {
@@ -1047,17 +1087,16 @@ export default function PhotoEditor() {
             y: Math.round(layerStartPos.y + dy),
           });
         } else {
-          // Uniform scaling calculation based on aspect ratio
+          // Continuous Font Resizing Fix (Outward & Inward)
           const originalRatio = layerStartSize.width / layerStartSize.height;
           let newWidth = layerStartSize.width;
           let newHeight = layerStartSize.height;
 
           if (activeHandle === 'br') {
-            newWidth = Math.max(20, layerStartSize.width + dx);
+            newWidth = layerStartSize.width + dx;
             newHeight = newWidth / originalRatio;
             
-            // Dynamic Font Scaling for Text Layers
-            const fontUpdate = layer.type === 'text' ? { fontSize: Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24)) } : {};
+            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24))) } : {};
 
             updateSelectedLayer({
               width: Math.round(newWidth),
@@ -1065,10 +1104,10 @@ export default function PhotoEditor() {
               ...fontUpdate
             });
           } else if (activeHandle === 'bl') {
-            newWidth = Math.max(20, layerStartSize.width - dx);
+            newWidth = layerStartSize.width - dx;
             newHeight = newWidth / originalRatio;
             
-            const fontUpdate = layer.type === 'text' ? { fontSize: Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24)) } : {};
+            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24))) } : {};
 
             updateSelectedLayer({
               x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
@@ -1077,10 +1116,10 @@ export default function PhotoEditor() {
               ...fontUpdate
             });
           } else if (activeHandle === 'tr') {
-            newWidth = Math.max(20, layerStartSize.width + dx);
+            newWidth = layerStartSize.width + dx;
             newHeight = newWidth / originalRatio;
             
-            const fontUpdate = layer.type === 'text' ? { fontSize: Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24)) } : {};
+            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24))) } : {};
 
             updateSelectedLayer({
               y: Math.round(layerStartPos.y + (layerStartSize.height - newHeight)),
@@ -1089,10 +1128,10 @@ export default function PhotoEditor() {
               ...fontUpdate
             });
           } else if (activeHandle === 'tl') {
-            newWidth = Math.max(20, layerStartSize.width - dx);
+            newWidth = layerStartSize.width - dx;
             newHeight = newWidth / originalRatio;
             
-            const fontUpdate = layer.type === 'text' ? { fontSize: Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24)) } : {};
+            const fontUpdate = layer.type === 'text' ? { fontSize: Math.max(8, Math.round((newWidth / layerStartSize.width) * (layer.fontSize || 24))) } : {};
 
             updateSelectedLayer({
               x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
@@ -1329,26 +1368,53 @@ export default function PhotoEditor() {
     }
   };
 
-  // Isolated Workspace Canvas Zooming Engine (Mouse Wheel)
-  const handleWheelZoom = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (e.ctrlKey) {
-      e.preventDefault();
-      const zoomStep = e.deltaY < 0 ? 5 : -5;
-      setZoom((prev) => Math.min(300, Math.max(25, prev + zoomStep)));
+  // Keyboard listener for Presentation Mode exit
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'q' || e.key === 'Q') {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Trigger Full-Screen Presentation Mode
+  const handlePresent = () => {
+    if (containerRef.current) {
+      containerRef.current.requestFullscreen().catch((err) => {
+        console.error('Error enabling fullscreen:', err);
+      });
     }
   };
 
-  // Export final canvas
-  const handleExport = () => {
-    if (!canvasRef.current) return;
-    const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.95);
-    const link = document.createElement('a');
-    link.download = `pixelcraft_${activeProject.id}_export.jpg`;
-    link.href = dataUrl;
-    link.click();
+  // Slide Management
+  const addSlide = () => {
+    const newSlideId = `slide-${slides.length + 1}`;
+    setSlides([...slides, { id: newSlideId, layers: [], transition: 'fade' }]);
+    setActiveSlideIndex(slides.length);
+    setLayers([]);
   };
 
-  const selectedLayer = layers.find((l) => l.id === selectedLayerId);
+  const selectSlide = (index: number) => {
+    // Save current layers to active slide
+    const updatedSlides = [...slides];
+    updatedSlides[activeSlideIndex].layers = [...layers];
+    setSlides(updatedSlides);
+
+    // Load selected slide layers
+    setActiveSlideIndex(index);
+    setLayers(updatedSlides[index].layers);
+  };
+
+  // Presentation Slide Transition Toggle
+  const toggleTransition = (index: number) => {
+    const updatedSlides = [...slides];
+    updatedSlides[index].transition = updatedSlides[index].transition === 'fade' ? 'slide' : 'fade';
+    setSlides(updatedSlides);
+  };
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-900 text-zinc-100 overflow-hidden relative text-sm md:text-base">
@@ -1372,6 +1438,15 @@ export default function PhotoEditor() {
 
         {view === 'editor' && (
           <div className="flex items-center gap-4">
+            {activeProject.id === 'presentation' && (
+              <button
+                onClick={handlePresent}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg shadow-lg shadow-emerald-600/20 transition-all"
+              >
+                <Play className="w-4 h-4" />
+                Present (Press Q to Exit)
+              </button>
+            )}
             <button
               onClick={() => setView('dashboard')}
               className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-zinc-400 hover:text-white bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800/60 rounded-lg transition-all"
@@ -1579,12 +1654,12 @@ export default function PhotoEditor() {
             {/* Minimalist Left Icon Panel */}
             <div className="w-20 border-r border-zinc-800/60 bg-zinc-950 flex flex-col items-center py-6 gap-5 z-20">
               {[
-                { id: 'templates', icon: <Layout className="w-7 h-7" />, label: 'Templates' },
-                { id: 'elements', icon: <Smile className="w-7 h-7" />, label: 'Elements' },
-                { id: 'texts', icon: <Type className="w-7 h-7" />, label: 'Texts' },
-                { id: 'uploads', icon: <Upload className="w-7 h-7" />, label: 'Uploads' },
-                { id: 'tools', icon: <Sliders className="w-7 h-7" />, label: 'Tools' },
-                { id: 'shortcuts', icon: <Keyboard className="w-7 h-7" />, label: 'Shortcuts' },
+                { id: 'templates', icon: <Layout className="w-8 h-8" />, label: 'Templates' },
+                { id: 'elements', icon: <Smile className="w-8 h-8" />, label: 'Elements' },
+                { id: 'texts', icon: <Type className="w-8 h-8" />, label: 'Texts' },
+                { id: 'uploads', icon: <Upload className="w-8 h-8" />, label: 'Uploads' },
+                { id: 'tools', icon: <Sliders className="w-8 h-8" />, label: 'Tools' },
+                { id: 'shortcuts', icon: <Keyboard className="w-8 h-8" />, label: 'Shortcuts' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1625,7 +1700,7 @@ export default function PhotoEditor() {
                       <div className="space-y-3">
                         {/* Default Passive Income Template */}
                         <div 
-                          onClick={() => addTextLayer('passive')}
+                          onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=1200&q=80', 'https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=1200&q=80', true)}
                           className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                         >
                           <div className="aspect-[9/16] w-full bg-zinc-900 relative overflow-hidden flex flex-col justify-end p-4">
@@ -1641,14 +1716,14 @@ export default function PhotoEditor() {
                         {activeProject.aspectRatio === '16:9' ? (
                           <>
                             <div 
-                              onClick={() => addTextLayer('heading')}
+                              onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80', 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&q=80', true)}
                               className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                             >
                               <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=300&q=80" className="w-full h-24 object-cover" alt="YouTube Template 1" />
                               <div className="p-2 text-[11px] font-semibold text-zinc-300">Cyberpunk Thumbnail Layout</div>
                             </div>
                             <div 
-                              onClick={() => addTextLayer('bold')}
+                              onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=1200&q=80', 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=1200&q=80', true)}
                               className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                             >
                               <img src="https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=300&q=80" className="w-full h-24 object-cover" alt="YouTube Template 2" />
@@ -1658,14 +1733,14 @@ export default function PhotoEditor() {
                         ) : (
                           <>
                             <div 
-                              onClick={() => addTextLayer('heading')}
+                              onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80', true)}
                               className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                             >
                               <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 1" />
                               <div className="p-2 text-[11px] font-semibold text-zinc-300">Minimalist Square Post</div>
                             </div>
                             <div 
-                              onClick={() => addTextLayer('bold')}
+                              onClick={() => addImageLayerFromSrc('https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=1200&q=80', 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=1200&q=80', true)}
                               className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
                             >
                               <img src="https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 2" />
@@ -1890,7 +1965,7 @@ export default function PhotoEditor() {
             >
               {/* Dynamic Aspect Ratio Container */}
               <div 
-                className="relative w-full h-full flex items-center justify-center"
+                className="relative w-full h-full flex items-center justify-center overflow-auto"
                 style={{
                   maxHeight: '70vh',
                 }}
@@ -1913,6 +1988,53 @@ export default function PhotoEditor() {
                   />
                 </div>
               </div>
+
+              {/* Document Mode Page Multiplier Button */}
+              {activeProject.id === 'docs' && (
+                <button
+                  onClick={() => setDocPages((prev) => prev + 1)}
+                  className="absolute bottom-32 left-1/2 transform -translate-x-1/2 flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full shadow-lg font-bold text-xs z-20"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Page
+                </button>
+              )}
+
+              {/* Presentation Mode Slide Filmstrip Carousel */}
+              {activeProject.id === 'presentation' && (
+                <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-zinc-900/90 px-4 py-3 rounded-xl border border-zinc-800/60 backdrop-blur-md shadow-lg z-20 max-w-xl overflow-x-auto">
+                  {slides.map((slide, idx) => (
+                    <React.Fragment key={slide.id}>
+                      <div 
+                        onClick={() => selectSlide(idx)}
+                        className={`relative w-20 aspect-video bg-zinc-950 rounded border cursor-pointer overflow-hidden flex-shrink-0 transition-all ${
+                          idx === activeSlideIndex ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-zinc-500">
+                          Slide {idx + 1}
+                        </div>
+                      </div>
+                      {idx < slides.length - 1 && (
+                        <button 
+                          onClick={() => toggleTransition(idx)}
+                          className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[9px] font-bold uppercase text-indigo-400 flex-shrink-0"
+                          title="Toggle Transition"
+                        >
+                          {slides[idx].transition}
+                        </button>
+                      )}
+                    </React.Fragment>
+                  ))}
+                  <button
+                    onClick={addSlide}
+                    className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg flex items-center justify-center flex-shrink-0"
+                    title="Add Slide"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
 
               {/* Zoom Slider Control */}
               <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 flex items-center gap-3 bg-zinc-900/90 px-4 py-2 rounded-full border border-zinc-800/60 backdrop-blur-md shadow-lg z-20">
@@ -2089,7 +2211,7 @@ export default function PhotoEditor() {
                       </h2>
                     </div>
 
-                    {/* 1. Filter and Adjustment Controls (Sliders for Brightness, Hue, Saturation, Gamma) */}
+                    {/* 1. Filter and Fine Adjustments (Sliders for Brightness, Hue, Saturation, Gamma) */}
                     <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                       <button
                         onClick={() => toggleAccordion('filters')}
