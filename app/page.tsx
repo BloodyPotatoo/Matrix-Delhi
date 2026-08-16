@@ -35,7 +35,17 @@ import {
   Scissors,
   Paintbrush,
   Eraser,
-  Smile
+  Smile,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  CaseSensitive,
+  Keyboard,
+  StickyNote,
+  MousePointer,
+  PenTool,
+  Crop
 } from 'lucide-react';
 
 // Types & Interfaces
@@ -55,12 +65,14 @@ interface Corner {
 
 interface Layer {
   id: string;
-  type: 'image' | 'text' | 'shape' | 'element';
+  type: 'image' | 'text' | 'shape' | 'element' | 'sticky';
   name: string;
   // Image/Element specific
   src?: string;
   imgElement?: HTMLImageElement | null;
   warpMode: boolean;
+  cropMode: boolean;
+  cropBounds?: { x: number; y: number; width: number; height: number };
   corners: {
     tl: Corner;
     tr: Corner;
@@ -90,6 +102,8 @@ interface Layer {
   isUnderline?: boolean;
   isStrikethrough?: boolean;
   letterSpacing?: number;
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  isUppercase?: boolean;
 }
 
 interface ProjectConfig {
@@ -188,6 +202,25 @@ const MEME_TEMPLATES = [
   },
 ];
 
+const FONT_FAMILIES = [
+  'sans-serif',
+  'serif',
+  'monospace',
+  'cursive',
+  'fantasy',
+  'system-ui',
+  'Inter',
+  'Roboto',
+  'Playfair Display',
+  'Montserrat',
+  'Oswald',
+  'Pacifico',
+  'Courier New',
+  'Georgia',
+  'Impact',
+  'Comic Sans MS'
+];
+
 export default function PhotoEditor() {
   // Navigation & Routing State
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
@@ -209,10 +242,12 @@ export default function PhotoEditor() {
   });
 
   // Global Canvas Settings
-  const [canvasBgColor, setCanvasBgColor] = useState<string>('#ffffff'); // Clean blank white base canvas
+  const [canvasBgColor, setCanvasBgColor] = useState<string>('#ffffff');
 
-  // Collapsible Left Panel State
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  // Left Panel & Drawer State
+  const [activeLeftTab, setActiveLeftTab] = useState<'templates' | 'elements' | 'texts' | 'uploads' | 'tools' | 'shortcuts' | null>('templates');
+  const [uploadedImages, setUploadedImages] = useState<{ name: string; src: string }[]>([]);
+  const [addedShapesHistory, setAddedShapesHistory] = useState<{ type: 'rect' | 'circle'; color: string }[]>([]);
 
   // Meme Selector Modal State
   const [showMemeModal, setShowMemeModal] = useState(false);
@@ -221,14 +256,15 @@ export default function PhotoEditor() {
   const [rightAccordion, setRightAccordion] = useState<{ [key: string]: boolean }>({
     opacity: true,
     filters: false,
-    crop: false,
+    crop: true,
     brush: false,
     text: true,
+    rotation: true,
   });
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const capsuleFileInputRef = useRef<HTMLInputElement>(null);
+  const bulkUploadInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -238,7 +274,7 @@ export default function PhotoEditor() {
     setView('editor');
     setLayers([]);
     setSelectedLayerId(null);
-    setLeftPanelOpen(true);
+    setActiveLeftTab('templates');
   };
 
   // Helper to generate default corners based on position and size
@@ -259,38 +295,60 @@ export default function PhotoEditor() {
       reader.onload = (event) => {
         if (event.target?.result) {
           const src = event.target.result as string;
-          const img = new Image();
-          img.src = src;
-          img.onload = () => {
-            const width = img.width > 400 ? 400 : img.width;
-            const height = img.width > 400 ? (400 / img.width) * img.height : img.height;
-            const x = 100;
-            const y = 100;
-            const newLayer: Layer = {
-              id: Date.now().toString(),
-              type: 'image',
-              name: file.name,
-              src: src,
-              imgElement: img,
-              warpMode: false,
-              corners: getInitialCorners(x, y, width, height),
-              x: x,
-              y: y,
-              width: width,
-              height: height,
-              rotation: 0,
-              opacity: 100,
-              flipH: false,
-              flipV: false,
-              filters: { ...DEFAULT_FILTERS },
-            };
-            setLayers((prev) => [...prev, newLayer]);
-            setSelectedLayerId(newLayer.id);
-          };
+          addImageLayerFromSrc(file.name, src);
         }
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // Bulk Upload Handler
+  const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      Array.from(files).forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            const src = event.target.result as string;
+            setUploadedImages((prev) => [...prev, { name: file.name, src }]);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  const addImageLayerFromSrc = (name: string, src: string) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => {
+      const width = img.width > 400 ? 400 : img.width;
+      const height = img.width > 400 ? (400 / img.width) * img.height : img.height;
+      const x = 100;
+      const y = 100;
+      const newLayer: Layer = {
+        id: Date.now().toString(),
+        type: 'image',
+        name: name,
+        src: src,
+        imgElement: img,
+        warpMode: false,
+        cropMode: false,
+        corners: getInitialCorners(x, y, width, height),
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+        rotation: 0,
+        opacity: 100,
+        flipH: false,
+        flipV: false,
+        filters: { ...DEFAULT_FILTERS },
+      };
+      setLayers((prev) => [...prev, newLayer]);
+      setSelectedLayerId(newLayer.id);
+    };
   };
 
   // Add Meme Layer
@@ -310,6 +368,7 @@ export default function PhotoEditor() {
         src: url,
         imgElement: img,
         warpMode: false,
+        cropMode: false,
         corners: getInitialCorners(x, y, width, height),
         x: x,
         y: y,
@@ -327,7 +386,7 @@ export default function PhotoEditor() {
   };
 
   // Add Text Layer
-  const addTextLayer = (presetType?: 'heading' | 'bold' | 'semibold') => {
+  const addTextLayer = (presetType?: 'heading' | 'bold' | 'semibold' | 'body') => {
     const x = 150;
     const y = 150 + layers.length * 20;
     const width = 300;
@@ -348,6 +407,9 @@ export default function PhotoEditor() {
     } else if (presetType === 'semibold') {
       text = 'Semi-bold Text';
       fontSize = 24;
+    } else if (presetType === 'body') {
+      text = 'This is a paragraph of body text.';
+      fontSize = 16;
     }
 
     const newLayer: Layer = {
@@ -363,7 +425,10 @@ export default function PhotoEditor() {
       isUnderline: false,
       isStrikethrough: false,
       letterSpacing: 0,
+      textAlign: 'center',
+      isUppercase: false,
       warpMode: false,
+      cropMode: false,
       corners: getInitialCorners(x, y, width, height),
       x: x,
       y: y,
@@ -380,18 +445,56 @@ export default function PhotoEditor() {
   };
 
   // Add Shape Layer
-  const addShapeLayer = (shapeType: 'rect' | 'circle') => {
+  const addShapeLayer = (shapeType: 'rect' | 'circle', customColor?: string) => {
     const x = 200;
     const y = 200;
     const width = 150;
     const height = 150;
+    const color = customColor || '#a855f7';
     const newLayer: Layer = {
       id: Date.now().toString(),
       type: 'shape',
       name: `${shapeType === 'rect' ? 'Rectangle' : 'Circle'} Layer`,
       shapeType: shapeType,
-      color: '#a855f7', // Neon purple default
+      color: color,
       warpMode: false,
+      cropMode: false,
+      corners: getInitialCorners(x, y, width, height),
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      rotation: 0,
+      opacity: 100,
+      flipH: false,
+      flipV: false,
+      filters: { ...DEFAULT_FILTERS },
+    };
+    setLayers((prev) => [...prev, newLayer]);
+    setSelectedLayerId(newLayer.id);
+
+    // Add to history
+    setAddedShapesHistory((prev) => {
+      const exists = prev.some((s) => s.type === shapeType && s.color === color);
+      if (exists) return prev;
+      return [{ type: shapeType, color }, ...prev].slice(0, 12);
+    });
+  };
+
+  // Add Sticky Note Layer
+  const addStickyNote = () => {
+    const x = 200;
+    const y = 200;
+    const width = 180;
+    const height = 180;
+    const newLayer: Layer = {
+      id: Date.now().toString(),
+      type: 'sticky',
+      name: 'Sticky Note',
+      text: 'Sticky Note Content',
+      color: '#fef08a', // Yellow sticky note
+      warpMode: false,
+      cropMode: false,
       corners: getInitialCorners(x, y, width, height),
       x: x,
       y: y,
@@ -430,6 +533,7 @@ export default function PhotoEditor() {
         src: src,
         imgElement: img,
         warpMode: false,
+        cropMode: false,
         corners: getInitialCorners(150, 150, 128, 128),
         x: 150,
         y: 150,
@@ -644,16 +748,32 @@ export default function PhotoEditor() {
           ctx.translate(centerX, centerY);
           ctx.rotate((layer.rotation * Math.PI) / 180);
           ctx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
-          ctx.drawImage(
-            layer.imgElement, 
-            -layer.width / 2, 
-            -layer.height / 2, 
-            layer.width, 
-            layer.height
-          );
+
+          if (layer.cropMode) {
+            // Simple crop simulation: draw only a portion of the image
+            ctx.drawImage(
+              layer.imgElement,
+              layer.imgElement.width * 0.15,
+              layer.imgElement.height * 0.15,
+              layer.imgElement.width * 0.7,
+              layer.imgElement.height * 0.7,
+              -layer.width / 2, 
+              -layer.height / 2, 
+              layer.width, 
+              layer.height
+            );
+          } else {
+            ctx.drawImage(
+              layer.imgElement, 
+              -layer.width / 2, 
+              -layer.height / 2, 
+              layer.width, 
+              layer.height
+            );
+          }
         }
       } else {
-        // Text or Shape Layers
+        // Text, Shape, or Sticky Layers
         const centerX = layer.x + layer.width / 2;
         const centerY = layer.y + layer.height / 2;
         ctx.translate(centerX, centerY);
@@ -667,14 +787,16 @@ export default function PhotoEditor() {
           const fontStyle = layer.isItalic ? 'italic' : 'normal';
           const fontWeight = layer.isBold ? 'bold' : 'normal';
           ctx.font = `${fontStyle} ${fontWeight} ${layer.fontSize || 24}px ${layer.fontFamily || 'sans-serif'}`;
-          ctx.textAlign = 'center';
+          ctx.textAlign = layer.textAlign || 'center';
           ctx.textBaseline = 'middle';
           
+          const displayText = layer.isUppercase ? layer.text.toUpperCase() : layer.text;
+          
           // Draw text
-          ctx.fillText(layer.text, 0, 0);
+          ctx.fillText(displayText, 0, 0);
 
           // Underline & Strikethrough simulation
-          const textWidth = ctx.measureText(layer.text).width;
+          const textWidth = ctx.measureText(displayText).width;
           if (layer.isUnderline) {
             ctx.beginPath();
             ctx.moveTo(-textWidth / 2, (layer.fontSize || 24) / 2);
@@ -691,6 +813,17 @@ export default function PhotoEditor() {
             ctx.lineWidth = 2;
             ctx.stroke();
           }
+        } else if (layer.type === 'sticky') {
+          // Draw sticky note background
+          ctx.fillStyle = layer.color || '#fef08a';
+          ctx.fillRect(-layer.width / 2, -layer.height / 2, layer.width, layer.height);
+          
+          // Draw sticky note text
+          ctx.fillStyle = '#1c1917';
+          ctx.font = `16px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(layer.text || '', 0, 0);
         } else if (layer.type === 'shape') {
           ctx.fillStyle = layer.color || '#a855f7';
           if (layer.shapeType === 'rect') {
@@ -1076,7 +1209,6 @@ export default function PhotoEditor() {
       {view === 'dashboard' && (
         <div className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full flex flex-col justify-center z-10">
           <div className="text-center mb-12">
-            {/* Hero Typography & Visual Hierarchy */}
             <h1 className="text-6xl md:text-8xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 drop-shadow-[0_6px_0_#4f46e5] uppercase font-mono mb-4">
               PIXELCRAFT
             </h1>
@@ -1096,7 +1228,6 @@ export default function PhotoEditor() {
                 onClick={() => handleSelectProject(project)}
                 className="group relative p-6 rounded-2xl bg-zinc-900/30 border border-zinc-800/60 hover:border-indigo-500/50 hover:bg-zinc-900/60 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden shadow-xl"
               >
-                {/* Cyberpunk Glow Effect */}
                 <div className={`absolute -right-12 -top-12 w-24 h-24 bg-gradient-to-br ${project.accentColor} opacity-10 blur-2xl group-hover:opacity-20 transition-all duration-300`} />
                 
                 <div>
@@ -1131,227 +1262,403 @@ export default function PhotoEditor() {
           
           {/* Context-Aware Capsule Header */}
           <div className="w-full flex justify-center py-3 bg-zinc-950/40 border-b border-zinc-800/40 z-20">
-            <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900/80 rounded-full border border-zinc-800/60 shadow-xl backdrop-blur-md">
-              {/* Import Button */}
-              <button
-                onClick={() => capsuleFileInputRef.current?.click()}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-full bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Import
-              </button>
-              <input
-                ref={capsuleFileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleImportImage}
-                className="hidden"
-              />
+            <div className={`flex items-center gap-3 px-5 py-2 rounded-full border shadow-xl backdrop-blur-md transition-all duration-300 ${
+              selectedLayer 
+                ? 'bg-zinc-950 border-indigo-500/50 text-white' 
+                : 'bg-zinc-900/40 border-zinc-800/60 text-zinc-600 cursor-not-allowed'
+            }`}>
+              {/* Opacity Slider Overlay */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider">Opacity</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  disabled={!selectedLayer}
+                  value={selectedLayer ? selectedLayer.opacity : 100}
+                  onChange={(e) => updateSelectedLayer({ opacity: Number(e.target.value) })}
+                  className="w-20 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 disabled:opacity-50"
+                />
+              </div>
 
-              <div className="h-4 w-[1px] bg-zinc-800/60 mx-1" />
+              <div className="h-4 w-[1px] bg-zinc-800/60" />
 
-              {/* Text Styling Actions (Conditional Formatting) */}
+              {/* Text Alignment Controls */}
+              <div className="flex items-center gap-1">
+                <button
+                  disabled={!selectedLayer || selectedLayer.type !== 'text'}
+                  onClick={() => updateSelectedLayer({ textAlign: 'left' })}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    selectedLayer?.textAlign === 'left' ? 'bg-indigo-500/20 text-indigo-400' : 'hover:bg-zinc-800 text-zinc-400'
+                  }`}
+                  title="Align Left"
+                >
+                  <AlignLeft className="w-4 h-4" />
+                </button>
+                <button
+                  disabled={!selectedLayer || selectedLayer.type !== 'text'}
+                  onClick={() => updateSelectedLayer({ textAlign: 'center' })}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    selectedLayer?.textAlign === 'center' ? 'bg-indigo-500/20 text-indigo-400' : 'hover:bg-zinc-800 text-zinc-400'
+                  }`}
+                  title="Align Center"
+                >
+                  <AlignCenter className="w-4 h-4" />
+                </button>
+                <button
+                  disabled={!selectedLayer || selectedLayer.type !== 'text'}
+                  onClick={() => updateSelectedLayer({ textAlign: 'right' })}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    selectedLayer?.textAlign === 'right' ? 'bg-indigo-500/20 text-indigo-400' : 'hover:bg-zinc-800 text-zinc-400'
+                  }`}
+                  title="Align Right"
+                >
+                  <AlignRight className="w-4 h-4" />
+                </button>
+                <button
+                  disabled={!selectedLayer || selectedLayer.type !== 'text'}
+                  onClick={() => updateSelectedLayer({ textAlign: 'justify' })}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    selectedLayer?.textAlign === 'justify' ? 'bg-indigo-500/20 text-indigo-400' : 'hover:bg-zinc-800 text-zinc-400'
+                  }`}
+                  title="Align Justify"
+                >
+                  <AlignJustify className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="h-4 w-[1px] bg-zinc-800/60" />
+
+              {/* Case Transformer */}
               <button
                 disabled={!selectedLayer || selectedLayer.type !== 'text'}
-                onClick={() => updateSelectedLayer({ isBold: !selectedLayer?.isBold })}
+                onClick={() => updateSelectedLayer({ isUppercase: !selectedLayer?.isUppercase })}
                 className={`p-1.5 rounded-lg transition-all ${
-                  !selectedLayer || selectedLayer.type !== 'text'
-                    ? 'text-zinc-600 cursor-not-allowed'
-                    : selectedLayer.isBold
-                    ? 'bg-indigo-500/20 text-indigo-400'
-                    : 'text-zinc-300 hover:bg-zinc-800'
+                  selectedLayer?.isUppercase ? 'bg-indigo-500/20 text-indigo-400' : 'hover:bg-zinc-800 text-zinc-400'
                 }`}
-                title="Bold"
+                title="Toggle UPPERCASE / lowercase"
               >
-                <Bold className="w-4 h-4" />
+                <CaseSensitive className="w-4 h-4" />
               </button>
 
-              <button
-                disabled={!selectedLayer || selectedLayer.type !== 'text'}
-                onClick={() => updateSelectedLayer({ isItalic: !selectedLayer?.isItalic })}
-                className={`p-1.5 rounded-lg transition-all ${
-                  !selectedLayer || selectedLayer.type !== 'text'
-                    ? 'text-zinc-600 cursor-not-allowed'
-                    : selectedLayer.isItalic
-                    ? 'bg-indigo-500/20 text-indigo-400'
-                    : 'text-zinc-300 hover:bg-zinc-800'
-                }`}
-                title="Italic"
-              >
-                <Italic className="w-4 h-4" />
-              </button>
+              <div className="h-4 w-[1px] bg-zinc-800/60" />
 
-              <button
-                disabled={!selectedLayer || selectedLayer.type !== 'text'}
-                onClick={() => updateSelectedLayer({ isUnderline: !selectedLayer?.isUnderline })}
-                className={`p-1.5 rounded-lg transition-all ${
-                  !selectedLayer || selectedLayer.type !== 'text'
-                    ? 'text-zinc-600 cursor-not-allowed'
-                    : selectedLayer.isUnderline
-                    ? 'bg-indigo-500/20 text-indigo-400'
-                    : 'text-zinc-300 hover:bg-zinc-800'
-                }`}
-                title="Underline"
-              >
-                <Underline className="w-4 h-4" />
-              </button>
+              {/* Colour Picker */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider">Color</span>
+                <input
+                  type="color"
+                  disabled={!selectedLayer}
+                  value={selectedLayer?.color || '#ffffff'}
+                  onChange={(e) => updateSelectedLayer({ color: e.target.value })}
+                  className="w-6 h-6 rounded cursor-pointer bg-transparent border-0"
+                />
+              </div>
 
+              <div className="h-4 w-[1px] bg-zinc-800/60" />
+
+              {/* Delete Layer */}
               <button
-                disabled={!selectedLayer || selectedLayer.type !== 'text'}
-                onClick={() => updateSelectedLayer({ isStrikethrough: !selectedLayer?.isStrikethrough })}
-                className={`p-1.5 rounded-lg transition-all ${
-                  !selectedLayer || selectedLayer.type !== 'text'
-                    ? 'text-zinc-600 cursor-not-allowed'
-                    : selectedLayer.isStrikethrough
-                    ? 'bg-indigo-500/20 text-indigo-400'
-                    : 'text-zinc-300 hover:bg-zinc-800'
-                }`}
-                title="Strikethrough"
+                disabled={!selectedLayer}
+                onClick={deleteLayer}
+                className="p-1.5 rounded-lg text-red-400 hover:bg-red-950/50 hover:text-red-300 transition-all"
+                title="Delete Layer"
               >
-                <Strikethrough className="w-4 h-4" />
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           </div>
 
           <div className="flex-1 flex overflow-hidden">
             
-            {/* Collapsible Left Panel (Asset Library) */}
-            {(activeProject.id === 'thumbnail' || activeProject.id === 'instagram') && (
-              <div 
-                className={`border-r border-zinc-800/60 bg-zinc-900/40 backdrop-blur-md flex flex-col transition-all duration-300 relative z-10 ${
-                  leftPanelOpen ? 'w-72' : 'w-0 overflow-hidden border-r-0'
-                }`}
-              >
-                {/* Toggle Button */}
+            {/* Minimalist Left Icon Panel */}
+            <div className="w-16 border-r border-zinc-800/60 bg-zinc-950 flex flex-col items-center py-4 gap-4 z-20">
+              {[
+                { id: 'templates', icon: <Layout className="w-5 h-5" />, label: 'Templates' },
+                { id: 'elements', icon: <Smile className="w-5 h-5" />, label: 'Elements' },
+                { id: 'texts', icon: <Type className="w-5 h-5" />, label: 'Texts' },
+                { id: 'uploads', icon: <Upload className="w-5 h-5" />, label: 'Uploads' },
+                { id: 'tools', icon: <Sliders className="w-5 h-5" />, label: 'Tools' },
+                { id: 'shortcuts', icon: <Keyboard className="w-5 h-5" />, label: 'Shortcuts' },
+              ].map((tab) => (
                 <button
-                  onClick={() => setLeftPanelOpen(!leftPanelOpen)}
-                  className="absolute top-1/2 -right-4 -translate-y-1/2 w-8 h-8 bg-zinc-900 border border-zinc-800/60 rounded-full flex items-center justify-center text-zinc-400 hover:text-white shadow-lg z-30"
+                  key={tab.id}
+                  onClick={() => setActiveLeftTab(activeLeftTab === tab.id ? null : (tab.id as any))}
+                  className={`p-3 rounded-xl transition-all relative group ${
+                    activeLeftTab === tab.id 
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  }`}
+                  title={tab.label}
                 >
-                  {leftPanelOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  {tab.icon}
+                  <span className="absolute left-20 bg-zinc-950 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30 border border-zinc-800">
+                    {tab.label}
+                  </span>
                 </button>
+              ))}
+            </div>
 
-                {leftPanelOpen && (
-                  <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                    {/* Templates Section */}
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Templates</h3>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button 
-                          onClick={() => addTextLayer('heading')}
-                          className="p-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-xl text-left text-xs transition-all"
-                        >
-                          <div className="font-bold text-indigo-400">YouTube</div>
-                          <div className="text-[10px] text-zinc-500">Thumbnail Layout</div>
-                        </button>
-                        <button 
-                          onClick={() => addTextLayer('bold')}
-                          className="p-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-xl text-left text-xs transition-all"
-                        >
-                          <div className="font-bold text-pink-400">Instagram</div>
-                          <div className="text-[10px] text-zinc-500">Square Post</div>
-                        </button>
+            {/* Interactive Drawer */}
+            {activeLeftTab && (
+              <div className="w-72 border-r border-zinc-800/60 bg-zinc-900/40 backdrop-blur-md flex flex-col z-10 transition-all duration-300">
+                <div className="p-4 border-b border-zinc-800/60 flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300">{activeLeftTab}</h3>
+                  <button onClick={() => setActiveLeftTab(null)} className="text-zinc-500 hover:text-white">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                  {/* Templates Drawer */}
+                  {activeLeftTab === 'templates' && (
+                    <div className="space-y-4">
+                      <p className="text-xs text-zinc-400">
+                        Active Mode: <span className="text-indigo-400 font-semibold">{activeProject.name} ({activeProject.aspectRatio})</span>
+                      </p>
+                      <div className="space-y-3">
+                        {activeProject.aspectRatio === '16:9' ? (
+                          <>
+                            <div 
+                              onClick={() => addTextLayer('heading')}
+                              className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                            >
+                              <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=300&q=80" className="w-full h-24 object-cover" alt="YouTube Template 1" />
+                              <div className="p-2 text-[11px] font-semibold text-zinc-300">Cyberpunk Thumbnail Layout</div>
+                            </div>
+                            <div 
+                              onClick={() => addTextLayer('bold')}
+                              className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                            >
+                              <img src="https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=300&q=80" className="w-full h-24 object-cover" alt="YouTube Template 2" />
+                              <div className="p-2 text-[11px] font-semibold text-zinc-300">Gaming Stream Layout</div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div 
+                              onClick={() => addTextLayer('heading')}
+                              className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                            >
+                              <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 1" />
+                              <div className="p-2 text-[11px] font-semibold text-zinc-300">Minimalist Square Post</div>
+                            </div>
+                            <div 
+                              onClick={() => addTextLayer('bold')}
+                              className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-xl overflow-hidden transition-all"
+                            >
+                              <img src="https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 2" />
+                              <div className="p-2 text-[11px] font-semibold text-zinc-300">Neon Quote Layout</div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
+                  )}
 
-                    {/* Memes Section */}
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Memes</h3>
-                      <div className="grid grid-cols-2 gap-2">
-                        {MEME_TEMPLATES.map((meme) => (
+                  {/* Elements Drawer */}
+                  {activeLeftTab === 'elements' && (
+                    <div className="space-y-5">
+                      <div>
+                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Graphic Stickers</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { name: 'Star', emoji: '⭐' },
+                            { name: 'Fire', emoji: '🔥' },
+                            { name: 'Heart', emoji: '❤️' },
+                            { name: 'Rocket', emoji: '🚀' },
+                            { name: 'Cool', emoji: '😎' },
+                            { name: 'Spark', emoji: '✨' },
+                            { name: 'Crown', emoji: '👑' },
+                            { name: 'Ghost', emoji: '👻' },
+                            { name: 'Alien', emoji: '👽' },
+                          ].map((el) => (
+                            <button
+                              key={el.name}
+                              onClick={() => addElementLayer(el.name, el.emoji)}
+                              className="p-2 bg-zinc-800/30 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-center text-lg transition-all"
+                            >
+                              {el.emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Shapes History</h4>
+                        {addedShapesHistory.length === 0 ? (
+                          <p className="text-[10px] text-zinc-500">No shapes added yet.</p>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-2">
+                            {addedShapesHistory.map((shape, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => addShapeLayer(shape.type, shape.color)}
+                                className="p-2 bg-zinc-800/30 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg flex items-center justify-center"
+                                title={`Re-add ${shape.type}`}
+                              >
+                                {shape.type === 'rect' ? (
+                                  <Square className="w-4 h-4" style={{ color: shape.color }} />
+                                ) : (
+                                  <Circle className="w-4 h-4" style={{ color: shape.color }} />
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Texts Drawer */}
+                  {activeLeftTab === 'texts' && (
+                    <div className="space-y-5">
+                      <div>
+                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Presets</h4>
+                        <div className="space-y-2">
                           <button
-                            key={meme.name}
-                            onClick={() => addMemeLayer(meme.name, meme.url)}
-                            className="p-2 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-xl text-left text-xs transition-all"
+                            onClick={() => addTextLayer('heading')}
+                            className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-sm font-bold transition-all"
                           >
-                            <div className="font-bold text-amber-400 truncate">{meme.name}</div>
-                            <div className="text-[9px] text-zinc-500">Add Meme</div>
+                            Add Heading
                           </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Elements Section */}
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Elements</h3>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { name: 'Star', emoji: '⭐' },
-                          { name: 'Fire', emoji: '🔥' },
-                          { name: 'Heart', emoji: '❤️' },
-                          { name: 'Rocket', emoji: '🚀' },
-                          { name: 'Cool', emoji: '😎' },
-                          { name: 'Spark', emoji: '✨' },
-                        ].map((el) => (
                           <button
-                            key={el.name}
-                            onClick={() => addElementLayer(el.name, el.emoji)}
-                            className="p-2 bg-zinc-800/30 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-center text-lg transition-all"
-                            title={el.name}
+                            onClick={() => addTextLayer('bold')}
+                            className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all"
                           >
-                            {el.emoji}
+                            Add Subtitle
                           </button>
-                        ))}
+                          <button
+                            onClick={() => addTextLayer('body')}
+                            className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-[11px] transition-all"
+                          >
+                            Add Paragraph Text
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Texts Section */}
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Texts</h3>
-                      <div className="space-y-2">
-                        <button
-                          onClick={() => addTextLayer('heading')}
-                          className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-sm font-bold transition-all"
-                        >
-                          Add Heading
-                        </button>
-                        <button
-                          onClick={() => addTextLayer('bold')}
-                          className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all"
-                        >
-                          Add Subtitle
-                        </button>
-                        <button
-                          onClick={() => addTextLayer('semibold')}
-                          className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-[11px] transition-all"
-                        >
-                          Add Body Text
-                        </button>
+                      <div>
+                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Typography Selector</h4>
+                        <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                          {FONT_FAMILIES.map((font) => (
+                            <button
+                              key={font}
+                              onClick={() => updateSelectedLayer({ fontFamily: font })}
+                              className={`w-full text-left px-2.5 py-1.5 rounded text-xs border transition-all ${
+                                selectedLayer?.fontFamily === font 
+                                  ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' 
+                                  : 'bg-zinc-950/40 border-zinc-800/60 hover:border-zinc-700 text-zinc-300'
+                              }`}
+                              style={{ fontFamily: font }}
+                            >
+                              {font}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
+                  )}
 
-                    {/* Tools Section */}
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Tools</h3>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => addShapeLayer('rect')}
-                          className="p-2.5 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-center text-xs transition-all flex flex-col items-center gap-1"
-                        >
-                          <Square className="w-4 h-4 text-indigo-400" />
-                          Rectangle
-                        </button>
-                        <button
-                          onClick={() => addShapeLayer('circle')}
-                          className="p-2.5 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-center text-xs transition-all flex flex-col items-center gap-1"
-                        >
-                          <Circle className="w-4 h-4 text-indigo-400" />
-                          Circle
-                        </button>
+                  {/* Uploads Drawer */}
+                  {activeLeftTab === 'uploads' && (
+                    <div className="space-y-4">
+                      <div 
+                        onClick={() => bulkUploadInputRef.current?.click()}
+                        className="border-2 border-dashed border-zinc-800 hover:border-indigo-500/50 rounded-xl p-4 text-center cursor-pointer transition-all bg-zinc-950/20"
+                      >
+                        <Upload className="w-6 h-6 mx-auto text-zinc-500 mb-2" />
+                        <span className="text-xs font-semibold text-zinc-300 block">Bulk Upload</span>
+                        <span className="text-[10px] text-zinc-500">Drop multiple images here</span>
+                        <input
+                          ref={bulkUploadInputRef}
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handleBulkUpload}
+                          className="hidden"
+                        />
+                      </div>
+
+                      {uploadedImages.length > 0 && (
+                        <div>
+                          <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Vault Storage</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {uploadedImages.map((img, idx) => (
+                              <div 
+                                key={idx}
+                                onClick={() => addImageLayerFromSrc(img.name, img.src)}
+                                className="group cursor-pointer bg-zinc-950 border border-zinc-800 hover:border-indigo-500 rounded-lg overflow-hidden transition-all"
+                              >
+                                <img src={img.src} className="w-full h-16 object-cover" alt={img.name} />
+                                <div className="p-1 text-[9px] text-zinc-400 truncate">{img.name}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tools Drawer */}
+                  {activeLeftTab === 'tools' && (
+                    <div className="space-y-3">
+                      <button
+                        onClick={() => setSelectedLayerId(null)}
+                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                      >
+                        <MousePointer className="w-4 h-4 text-indigo-400" />
+                        Select / Pointer
+                      </button>
+                      <button
+                        onClick={() => addShapeLayer('rect')}
+                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                      >
+                        <Square className="w-4 h-4 text-indigo-400" />
+                        Vector Rectangle
+                      </button>
+                      <button
+                        onClick={() => addShapeLayer('circle')}
+                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                      >
+                        <Circle className="w-4 h-4 text-indigo-400" />
+                        Vector Circle
+                      </button>
+                      <button
+                        onClick={addStickyNote}
+                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                      >
+                        <StickyNote className="w-4 h-4 text-indigo-400" />
+                        Sticky Note
+                      </button>
+                      <button
+                        onClick={() => addTextLayer()}
+                        className="w-full py-2.5 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all flex items-center gap-2"
+                      >
+                        <Type className="w-4 h-4 text-indigo-400" />
+                        Inline Floating Text
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Shortcuts Drawer */}
+                  {activeLeftTab === 'shortcuts' && (
+                    <div className="space-y-2 text-xs text-zinc-400">
+                      <div className="flex justify-between py-1 border-b border-zinc-800/40">
+                        <span>Delete Layer</span>
+                        <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-[10px]">Del</kbd>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-zinc-800/40">
+                        <span>Move Layer Up</span>
+                        <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-[10px]">Ctrl + Up</kbd>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-zinc-800/40">
+                        <span>Move Layer Down</span>
+                        <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-[10px]">Ctrl + Down</kbd>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            )}
-
-            {/* Left Panel Toggle Button when closed */}
-            {(activeProject.id === 'thumbnail' || activeProject.id === 'instagram') && !leftPanelOpen && (
-              <button
-                onClick={() => setLeftPanelOpen(true)}
-                className="absolute top-1/2 left-0 -translate-y-1/2 w-8 h-8 bg-zinc-900 border border-zinc-800/60 rounded-r-full flex items-center justify-center text-zinc-400 hover:text-white shadow-lg z-30"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
             )}
 
             {/* Center: Canvas Workspace */}
@@ -1563,7 +1870,77 @@ export default function PhotoEditor() {
                       )}
                     </div>
 
-                    {/* Accordion 2: Filters & Adjustments */}
+                    {/* Accordion 2: Mirror & Flip Controls */}
+                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <div className="px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300">
+                        <span>Mirror & Flip Controls</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => updateSelectedLayer({ flipH: !selectedLayer.flipH })}
+                            className={`p-1.5 rounded border transition-all ${
+                              selectedLayer.flipH ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white'
+                            }`}
+                            title="Flip Horizontal"
+                          >
+                            <FlipHorizontal className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => updateSelectedLayer({ flipV: !selectedLayer.flipV })}
+                            className={`p-1.5 rounded border transition-all ${
+                              selectedLayer.flipV ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white'
+                            }`}
+                            title="Flip Vertical"
+                          >
+                            <FlipVertical className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Accordion 3: Rotation Module */}
+                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
+                      <button
+                        onClick={() => toggleAccordion('rotation')}
+                        className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
+                      >
+                        <span>Rotation Module</span>
+                        <RotateCw className="w-4 h-4 text-zinc-500" />
+                      </button>
+                      {rightAccordion.rotation && (
+                        <div className="p-4 border-t border-zinc-800/40 space-y-4">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => updateSelectedLayer({ rotation: (selectedLayer.rotation - 90) % 360 })}
+                              className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              90° CCW
+                            </button>
+                            <button
+                              onClick={() => updateSelectedLayer({ rotation: (selectedLayer.rotation + 90) % 360 })}
+                              className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                            >
+                              <RotateCw className="w-3.5 h-3.5" />
+                              90° CW
+                            </button>
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                              <span>Fine Rotation</span>
+                              <span>{selectedLayer.rotation}°</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="360"
+                              value={selectedLayer.rotation}
+                              onChange={(e) => updateSelectedLayer({ rotation: Number(e.target.value) })}
+                              className="w-full accent-purple-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Accordion 4: Filters & Adjustments */}
                     <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                       <button
                         onClick={() => toggleAccordion('filters')}
@@ -1642,14 +2019,14 @@ export default function PhotoEditor() {
                       )}
                     </div>
 
-                    {/* Accordion 3: Crop & Perspective Warp */}
+                    {/* Accordion 5: Crop & Perspective Splitter */}
                     {(selectedLayer.type === 'image' || selectedLayer.type === 'element') && (
                       <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                         <button
                           onClick={() => toggleAccordion('crop')}
                           className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
                         >
-                          <span>Crop & Perspective Warp</span>
+                          <span>Crop & Perspective Splitter</span>
                           <Maximize2 className="w-4 h-4 text-zinc-500" />
                         </button>
                         {rightAccordion.crop && (
@@ -1664,6 +2041,7 @@ export default function PhotoEditor() {
                                   const nextWarp = !selectedLayer.warpMode;
                                   updateSelectedLayer({ 
                                     warpMode: nextWarp,
+                                    cropMode: false,
                                     corners: getInitialCorners(selectedLayer.x, selectedLayer.y, selectedLayer.width, selectedLayer.height)
                                   });
                                 }}
@@ -1676,44 +2054,35 @@ export default function PhotoEditor() {
                                 {selectedLayer.warpMode ? 'Active' : 'Inactive'}
                               </button>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
 
-                    {/* Accordion 4: Brush & Eraser Properties */}
-                    {activeProject.type === 'whiteboard' && (
-                      <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
-                        <button
-                          onClick={() => toggleAccordion('brush')}
-                          className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
-                        >
-                          <span>Brush & Eraser Properties</span>
-                          <Paintbrush className="w-4 h-4 text-zinc-500" />
-                        </button>
-                        {rightAccordion.brush && (
-                          <div className="p-4 border-t border-zinc-800/40 space-y-4">
-                            <div>
-                              <label className="text-xs text-zinc-400 block mb-2">Brush Color</label>
-                              <div className="flex gap-2">
-                                {['#a855f7', '#ec4899', '#3b82f6', '#10b981', '#f59e0b', '#ffffff'].map((color) => (
-                                  <button
-                                    key={color}
-                                    onClick={() => updateSelectedLayer({ color })}
-                                    className={`w-6 h-6 rounded-full border-2 transition-all ${
-                                      selectedLayer.color === color ? 'border-white scale-110' : 'border-transparent'
-                                    }`}
-                                    style={{ backgroundColor: color }}
-                                  />
-                                ))}
+                            <div className="flex items-center justify-between border-t border-zinc-800/40 pt-3">
+                              <div>
+                                <span className="text-xs font-semibold text-zinc-300 block">Crop Mode</span>
+                                <span className="text-[10px] text-zinc-500">Trim image dimensions instantly</span>
                               </div>
+                              <button
+                                onClick={() => {
+                                  const nextCrop = !selectedLayer.cropMode;
+                                  updateSelectedLayer({ 
+                                    cropMode: nextCrop,
+                                    warpMode: false
+                                  });
+                                }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  selectedLayer.cropMode 
+                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' 
+                                    : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                                }`}
+                              >
+                                {selectedLayer.cropMode ? 'Active' : 'Inactive'}
+                              </button>
                             </div>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Accordion 5: Typography & Text Box */}
+                    {/* Accordion 6: Typography & Text Box */}
                     {selectedLayer.type === 'text' && (
                       <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                         <button
