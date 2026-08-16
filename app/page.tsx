@@ -37,6 +37,11 @@ interface FilterSettings {
   hueRotate: number;
 }
 
+interface Corner {
+  x: number;
+  y: number;
+}
+
 interface Layer {
   id: string;
   type: 'image' | 'text' | 'shape';
@@ -44,6 +49,13 @@ interface Layer {
   // Image specific
   src?: string;
   imgElement?: HTMLImageElement | null;
+  warpMode: boolean;
+  corners: {
+    tl: Corner;
+    tr: Corner;
+    bl: Corner;
+    br: Corner;
+  };
   // Shape specific
   shapeType?: 'rect' | 'circle';
   color?: string;
@@ -135,15 +147,6 @@ const PROJECT_TEMPLATES: ProjectConfig[] = [
   },
 ];
 
-const PRESETS = [
-  { name: 'Original', filters: DEFAULT_FILTERS },
-  { name: 'Cinematic', filters: { brightness: 95, contrast: 125, saturation: 110, blur: 0, hueRotate: 345 } },
-  { name: 'Vintage', filters: { brightness: 90, contrast: 85, saturation: 75, blur: 0, hueRotate: 25 } },
-  { name: 'Dramatic B&W', filters: { brightness: 100, contrast: 145, saturation: 0, blur: 0, hueRotate: 0 } },
-  { name: 'Warm Sun', filters: { brightness: 105, contrast: 100, saturation: 120, blur: 0, hueRotate: 10 } },
-  { name: 'Cool Breeze', filters: { brightness: 100, contrast: 105, saturation: 90, blur: 0, hueRotate: 190 } },
-];
-
 export default function PhotoEditor() {
   // Navigation & Routing State
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
@@ -153,8 +156,16 @@ export default function PhotoEditor() {
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [activeHandle, setActiveHandle] = useState<'tl' | 'tr' | 'bl' | 'br' | 'move' | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [layerStartPos, setLayerStartPos] = useState({ x: 0, y: 0 });
+  const [layerStartSize, setLayerStartSize] = useState({ width: 0, height: 0 });
+  const [layerStartCorners, setLayerStartCorners] = useState({
+    tl: { x: 0, y: 0 },
+    tr: { x: 0, y: 0 },
+    bl: { x: 0, y: 0 },
+    br: { x: 0, y: 0 },
+  });
 
   // Global Canvas Settings
   const [canvasBgColor, setCanvasBgColor] = useState<string>('#ffffff'); // Clean blank white base canvas
@@ -172,6 +183,16 @@ export default function PhotoEditor() {
     setSelectedLayerId(null);
   };
 
+  // Helper to generate default corners based on position and size
+  const getInitialCorners = (x: number, y: number, width: number, height: number) => {
+    return {
+      tl: { x, y },
+      tr: { x: x + width, y },
+      bl: { x, y: y + height },
+      br: { x: x + width, y: y + height },
+    };
+  };
+
   // Import Image as a Layer
   const handleImportImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -183,16 +204,22 @@ export default function PhotoEditor() {
           const img = new Image();
           img.src = src;
           img.onload = () => {
+            const width = img.width > 400 ? 400 : img.width;
+            const height = img.width > 400 ? (400 / img.width) * img.height : img.height;
+            const x = 100;
+            const y = 100;
             const newLayer: Layer = {
               id: Date.now().toString(),
               type: 'image',
               name: file.name,
               src: src,
               imgElement: img,
-              x: 100,
-              y: 100,
-              width: img.width > 400 ? 400 : img.width,
-              height: img.width > 400 ? (400 / img.width) * img.height : img.height,
+              warpMode: false,
+              corners: getInitialCorners(x, y, width, height),
+              x: x,
+              y: y,
+              width: width,
+              height: height,
               rotation: 0,
               opacity: 100,
               flipH: false,
@@ -210,6 +237,10 @@ export default function PhotoEditor() {
 
   // Add Text Layer
   const addTextLayer = () => {
+    const x = 150;
+    const y = 150;
+    const width = 300;
+    const height = 60;
     const newLayer: Layer = {
       id: Date.now().toString(),
       type: 'text',
@@ -217,10 +248,12 @@ export default function PhotoEditor() {
       text: 'Double click to edit',
       fontSize: 36,
       color: '#000000',
-      x: 150,
-      y: 150,
-      width: 300,
-      height: 60,
+      warpMode: false,
+      corners: getInitialCorners(x, y, width, height),
+      x: x,
+      y: y,
+      width: width,
+      height: height,
       rotation: 0,
       opacity: 100,
       flipH: false,
@@ -233,16 +266,22 @@ export default function PhotoEditor() {
 
   // Add Shape Layer
   const addShapeLayer = (shapeType: 'rect' | 'circle') => {
+    const x = 200;
+    const y = 200;
+    const width = 150;
+    const height = 150;
     const newLayer: Layer = {
       id: Date.now().toString(),
       type: 'shape',
       name: `${shapeType === 'rect' ? 'Rectangle' : 'Circle'} Layer`,
       shapeType: shapeType,
       color: '#a855f7', // Neon purple default
-      x: 200,
-      y: 200,
-      width: 150,
-      height: 150,
+      warpMode: false,
+      corners: getInitialCorners(x, y, width, height),
+      x: x,
+      y: y,
+      width: width,
+      height: height,
       rotation: 0,
       opacity: 100,
       flipH: false,
@@ -281,7 +320,17 @@ export default function PhotoEditor() {
   // Update Selected Layer Properties
   const updateSelectedLayer = (updates: Partial<Layer>) => {
     if (!selectedLayerId) return;
-    setLayers(layers.map((l) => (l.id === selectedLayerId ? { ...l, ...updates } : l)));
+    setLayers(layers.map((l) => {
+      if (l.id === selectedLayerId) {
+        const updated = { ...l, ...updates };
+        // Keep corners in sync if position or size changes outside warp mode
+        if (!updated.warpMode && (updates.x !== undefined || updates.y !== undefined || updates.width !== undefined || updates.height !== undefined)) {
+          updated.corners = getInitialCorners(updated.x, updated.y, updated.width, updated.height);
+        }
+        return updated;
+      }
+      return l;
+    }));
   };
 
   const updateSelectedLayerFilters = (updates: Partial<FilterSettings>) => {
@@ -304,6 +353,69 @@ export default function PhotoEditor() {
     setLayers([]);
     setSelectedLayerId(null);
     setCanvasBgColor('#ffffff');
+  };
+
+  // Affine Triangle Texture Mapper for Perspective Warp
+  const drawTriangle = (
+    ctx: CanvasRenderingContext2D,
+    im: HTMLImageElement,
+    x0: number, y0: number,
+    x1: number, y1: number,
+    x2: number, y2: number,
+    sx0: number, sy0: number,
+    sx1: number, sy1: number,
+    sx2: number, sy2: number
+  ) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(sx0, sy0);
+    ctx.lineTo(sx1, sy1);
+    ctx.lineTo(sx2, sy2);
+    ctx.closePath();
+    ctx.clip();
+
+    const dX10 = x1 - x0;
+    const dY10 = y1 - y0;
+    const dX20 = x2 - x0;
+    const dY20 = y2 - y0;
+    const det = dX10 * dY20 - dX20 * dY10;
+    if (Math.abs(det) < 1e-6) {
+      ctx.restore();
+      return;
+    }
+    const idet = 1.0 / det;
+
+    const dsX10 = sx1 - sx0;
+    const dsY10 = sy1 - sy0;
+    const dsX20 = sx2 - sx0;
+    const dsY20 = sy2 - sy0;
+
+    const a = (dY20 * dsX10 - dY10 * dsX20) * idet;
+    const b = (dX10 * dsX20 - dX20 * dsX10) * idet;
+    const c = sx0 - a * x0 - b * y0;
+
+    const d = (dY20 * dsY10 - dY10 * dsY20) * idet;
+    const e = (dX10 * dsY20 - dX20 * dsY10) * idet;
+    const f = sy0 - d * x0 - e * y0;
+
+    ctx.transform(a, d, b, e, c, f);
+    ctx.drawImage(im, 0, 0);
+    ctx.restore();
+  };
+
+  const drawWarpedImage = (
+    ctx: CanvasRenderingContext2D,
+    img: HTMLImageElement,
+    layer: Layer
+  ) => {
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    const { tl, tr, bl, br } = layer.corners;
+
+    // Triangle 1: Top-Left, Top-Right, Bottom-Left
+    drawTriangle(ctx, img, 0, 0, w, 0, 0, h, tl.x, tl.y, tr.x, tr.y, bl.x, bl.y);
+    // Triangle 2: Top-Right, Bottom-Right, Bottom-Left
+    drawTriangle(ctx, img, w, 0, w, h, 0, h, tr.x, tr.y, br.x, br.y, bl.x, bl.y);
   };
 
   // Canvas Rendering Engine
@@ -353,14 +465,6 @@ export default function PhotoEditor() {
       // Apply global layer opacity
       ctx.globalAlpha = layer.opacity / 100;
 
-      // Translate to layer center for rotation & flips
-      const centerX = layer.x + layer.width / 2;
-      const centerY = layer.y + layer.height / 2;
-      ctx.translate(centerX, centerY);
-      ctx.rotate((layer.rotation * Math.PI) / 180);
-      ctx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
-
-      // Apply filters if image layer
       if (layer.type === 'image' && layer.imgElement) {
         ctx.filter = `
           brightness(${layer.filters.brightness}%) 
@@ -369,60 +473,116 @@ export default function PhotoEditor() {
           blur(${layer.filters.blur}px) 
           hue-rotate(${layer.filters.hueRotate}deg)
         `;
-        ctx.drawImage(
-          layer.imgElement, 
-          -layer.width / 2, 
-          -layer.height / 2, 
-          layer.width, 
-          layer.height
-        );
-      } else if (layer.type === 'text' && layer.text) {
-        ctx.fillStyle = layer.color || '#000000';
-        ctx.font = `bold ${layer.fontSize || 24}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(layer.text, 0, 0);
-      } else if (layer.type === 'shape') {
-        ctx.fillStyle = layer.color || '#a855f7';
-        if (layer.shapeType === 'rect') {
-          ctx.fillRect(-layer.width / 2, -layer.height / 2, layer.width, layer.height);
-        } else if (layer.shapeType === 'circle') {
-          ctx.beginPath();
-          ctx.arc(0, 0, Math.min(layer.width, layer.height) / 2, 0, 2 * Math.PI);
-          ctx.fill();
+
+        if (layer.warpMode) {
+          // Render with Perspective Warp
+          drawWarpedImage(ctx, layer.imgElement, layer);
+        } else {
+          // Standard Affine Transform
+          const centerX = layer.x + layer.width / 2;
+          const centerY = layer.y + layer.height / 2;
+          ctx.translate(centerX, centerY);
+          ctx.rotate((layer.rotation * Math.PI) / 180);
+          ctx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
+          ctx.drawImage(
+            layer.imgElement, 
+            -layer.width / 2, 
+            -layer.height / 2, 
+            layer.width, 
+            layer.height
+          );
+        }
+      } else {
+        // Text or Shape Layers
+        const centerX = layer.x + layer.width / 2;
+        const centerY = layer.y + layer.height / 2;
+        ctx.translate(centerX, centerY);
+        ctx.rotate((layer.rotation * Math.PI) / 180);
+        ctx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
+
+        if (layer.type === 'text' && layer.text) {
+          ctx.fillStyle = layer.color || '#000000';
+          ctx.font = `bold ${layer.fontSize || 24}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(layer.text, 0, 0);
+        } else if (layer.type === 'shape') {
+          ctx.fillStyle = layer.color || '#a855f7';
+          if (layer.shapeType === 'rect') {
+            ctx.fillRect(-layer.width / 2, -layer.height / 2, layer.width, layer.height);
+          } else if (layer.shapeType === 'circle') {
+            ctx.beginPath();
+            ctx.arc(0, 0, Math.min(layer.width, layer.height) / 2, 0, 2 * Math.PI);
+            ctx.fill();
+          }
         }
       }
 
       ctx.restore();
 
-      // Draw selection bounding box if active
+      // Draw selection bounding box & corner handles if active
       if (layer.id === selectedLayerId) {
         ctx.save();
-        ctx.strokeStyle = '#6366f1'; // Indigo neon selection border
-        ctx.lineWidth = 3;
-        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = '#ec4899'; // Neon pink selection border
+        ctx.lineWidth = 2.5;
         
-        const centerX = layer.x + layer.width / 2;
-        const centerY = layer.y + layer.height / 2;
-        ctx.translate(centerX, centerY);
-        ctx.rotate((layer.rotation * Math.PI) / 180);
-        
-        ctx.strokeRect(-layer.width / 2 - 4, -layer.height / 2 - 4, layer.width + 8, layer.height + 8);
-        
-        // Draw corner handles
-        ctx.fillStyle = '#a855f7';
-        const handleSize = 8;
-        ctx.fillRect(-layer.width / 2 - 8, -layer.height / 2 - 8, handleSize, handleSize);
-        ctx.fillRect(layer.width / 2, -layer.height / 2 - 8, handleSize, handleSize);
-        ctx.fillRect(-layer.width / 2 - 8, layer.height / 2, handleSize, handleSize);
-        ctx.fillRect(layer.width / 2, layer.height / 2, handleSize, handleSize);
+        if (layer.warpMode) {
+          // Draw warped quad outline
+          ctx.beginPath();
+          ctx.moveTo(layer.corners.tl.x, layer.corners.tl.y);
+          ctx.lineTo(layer.corners.tr.x, layer.corners.tr.y);
+          ctx.lineTo(layer.corners.br.x, layer.corners.br.y);
+          ctx.lineTo(layer.corners.bl.x, layer.corners.bl.y);
+          ctx.closePath();
+          ctx.stroke();
+
+          // Draw neon pink corner handles
+          ctx.fillStyle = '#ec4899';
+          const hSize = 10;
+          const drawHandle = (c: Corner) => {
+            ctx.fillRect(c.x - hSize / 2, c.y - hSize / 2, hSize, hSize);
+            ctx.strokeRect(c.x - hSize / 2, c.y - hSize / 2, hSize, hSize);
+          };
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          drawHandle(layer.corners.tl);
+          drawHandle(layer.corners.tr);
+          drawHandle(layer.corners.bl);
+          drawHandle(layer.corners.br);
+        } else {
+          // Standard bounding box
+          ctx.setLineDash([6, 4]);
+          const centerX = layer.x + layer.width / 2;
+          const centerY = layer.y + layer.height / 2;
+          ctx.translate(centerX, centerY);
+          ctx.rotate((layer.rotation * Math.PI) / 180);
+          
+          ctx.strokeRect(-layer.width / 2 - 4, -layer.height / 2 - 4, layer.width + 8, layer.height + 8);
+          
+          // Draw corner handles
+          ctx.fillStyle = '#ec4899';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          const hSize = 10;
+          ctx.fillRect(-layer.width / 2 - 4 - hSize / 2, -layer.height / 2 - 4 - hSize / 2, hSize, hSize);
+          ctx.strokeRect(-layer.width / 2 - 4 - hSize / 2, -layer.height / 2 - 4 - hSize / 2, hSize, hSize);
+
+          ctx.fillRect(layer.width / 2 + 4 - hSize / 2, -layer.height / 2 - 4 - hSize / 2, hSize, hSize);
+          ctx.strokeRect(layer.width / 2 + 4 - hSize / 2, -layer.height / 2 - 4 - hSize / 2, hSize, hSize);
+
+          ctx.fillRect(-layer.width / 2 - 4 - hSize / 2, layer.height / 2 + 4 - hSize / 2, hSize, hSize);
+          ctx.strokeRect(-layer.width / 2 - 4 - hSize / 2, layer.height / 2 + 4 - hSize / 2, hSize, hSize);
+
+          ctx.fillRect(layer.width / 2 + 4 - hSize / 2, layer.height / 2 + 4 - hSize / 2, hSize, hSize);
+          ctx.strokeRect(layer.width / 2 + 4 - hSize / 2, layer.height / 2 + 4 - hSize / 2, hSize, hSize);
+        }
         
         ctx.restore();
       }
     });
   }, [view, activeProject, layers, selectedLayerId, canvasBgColor]);
 
-  // Interactive Canvas Dragging & Selection
+  // Interactive Canvas Dragging, Selection & Corner Handle Transformations
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -433,21 +593,132 @@ export default function PhotoEditor() {
     const clickX = (e.clientX - rect.left) * scaleX;
     const clickY = (e.clientY - rect.top) * scaleY;
 
-    // Find clicked layer (traverse backwards to select top-most layer first)
+    // 1. Check if clicked on a corner handle of the currently selected layer
+    if (selectedLayerId) {
+      const layer = layers.find((l) => l.id === selectedLayerId);
+      if (layer) {
+        const handleRadius = 15; // Click tolerance
+        
+        if (layer.warpMode) {
+          const dist = (p1: Corner, p2: { x: number; y: number }) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+          if (dist(layer.corners.tl, { x: clickX, y: clickY }) < handleRadius) {
+            setActiveHandle('tl');
+            setIsDragging(true);
+            setDragStart({ x: clickX, y: clickY });
+            setLayerStartCorners({ ...layer.corners });
+            return;
+          }
+          if (dist(layer.corners.tr, { x: clickX, y: clickY }) < handleRadius) {
+            setActiveHandle('tr');
+            setIsDragging(true);
+            setDragStart({ x: clickX, y: clickY });
+            setLayerStartCorners({ ...layer.corners });
+            return;
+          }
+          if (dist(layer.corners.bl, { x: clickX, y: clickY }) < handleRadius) {
+            setActiveHandle('bl');
+            setIsDragging(true);
+            setDragStart({ x: clickX, y: clickY });
+            setLayerStartCorners({ ...layer.corners });
+            return;
+          }
+          if (dist(layer.corners.br, { x: clickX, y: clickY }) < handleRadius) {
+            setActiveHandle('br');
+            setIsDragging(true);
+            setDragStart({ x: clickX, y: clickY });
+            setLayerStartCorners({ ...layer.corners });
+            return;
+          }
+        } else {
+          // Standard bounding box corner detection
+          const cx = layer.x + layer.width / 2;
+          const cy = layer.y + layer.height / 2;
+          const rad = (layer.rotation * Math.PI) / 180;
+
+          const getRotatedPoint = (px: number, py: number) => {
+            const dx = px - cx;
+            const dy = py - cy;
+            return {
+              x: cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+              y: cy + dx * Math.sin(rad) + dy * Math.cos(rad),
+            };
+          };
+
+          const tlRot = getRotatedPoint(layer.x - 4, layer.y - 4);
+          const trRot = getRotatedPoint(layer.x + layer.width + 4, layer.y - 4);
+          const blRot = getRotatedPoint(layer.x - 4, layer.y + layer.height + 4);
+          const brRot = getRotatedPoint(layer.x + layer.width + 4, layer.y + layer.height + 4);
+
+          const dist = (p1: { x: number; y: number }, p2: { x: number; y: number }) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+          if (dist(tlRot, { x: clickX, y: clickY }) < handleRadius) {
+            setActiveHandle('tl');
+            setIsDragging(true);
+            setDragStart({ x: clickX, y: clickY });
+            setLayerStartPos({ x: layer.x, y: layer.y });
+            setLayerStartSize({ width: layer.width, height: layer.height });
+            return;
+          }
+          if (dist(trRot, { x: clickX, y: clickY }) < handleRadius) {
+            setActiveHandle('tr');
+            setIsDragging(true);
+            setDragStart({ x: clickX, y: clickY });
+            setLayerStartPos({ x: layer.x, y: layer.y });
+            setLayerStartSize({ width: layer.width, height: layer.height });
+            return;
+          }
+          if (dist(blRot, { x: clickX, y: clickY }) < handleRadius) {
+            setActiveHandle('bl');
+            setIsDragging(true);
+            setDragStart({ x: clickX, y: clickY });
+            setLayerStartPos({ x: layer.x, y: layer.y });
+            setLayerStartSize({ width: layer.width, height: layer.height });
+            return;
+          }
+          if (dist(brRot, { x: clickX, y: clickY }) < handleRadius) {
+            setActiveHandle('br');
+            setIsDragging(true);
+            setDragStart({ x: clickX, y: clickY });
+            setLayerStartPos({ x: layer.x, y: layer.y });
+            setLayerStartSize({ width: layer.width, height: layer.height });
+            return;
+          }
+        }
+      }
+    }
+
+    // 2. Check if clicked inside any layer to move it
     let foundLayerId: string | null = null;
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i];
-      if (
-        clickX >= layer.x &&
-        clickX <= layer.x + layer.width &&
-        clickY >= layer.y &&
-        clickY <= layer.y + layer.height
-      ) {
-        foundLayerId = layer.id;
-        setIsDragging(true);
-        setDragStart({ x: clickX, y: clickY });
-        setLayerStartPos({ x: layer.x, y: layer.y });
-        break;
+      if (layer.warpMode) {
+        // Simple bounding box check for warp mode selection
+        const minX = Math.min(layer.corners.tl.x, layer.corners.tr.x, layer.corners.bl.x, layer.corners.br.x);
+        const maxX = Math.max(layer.corners.tl.x, layer.corners.tr.x, layer.corners.bl.x, layer.corners.br.x);
+        const minY = Math.min(layer.corners.tl.y, layer.corners.tr.y, layer.corners.bl.y, layer.corners.br.y);
+        const maxY = Math.max(layer.corners.tl.y, layer.corners.tr.y, layer.corners.bl.y, layer.corners.br.y);
+        if (clickX >= minX && clickX <= maxX && clickY >= minY && clickY <= maxY) {
+          foundLayerId = layer.id;
+          setActiveHandle('move');
+          setIsDragging(true);
+          setDragStart({ x: clickX, y: clickY });
+          setLayerStartCorners({ ...layer.corners });
+          break;
+        }
+      } else {
+        if (
+          clickX >= layer.x &&
+          clickX <= layer.x + layer.width &&
+          clickY >= layer.y &&
+          clickY <= layer.y + layer.height
+        ) {
+          foundLayerId = layer.id;
+          setActiveHandle('move');
+          setIsDragging(true);
+          setDragStart({ x: clickX, y: clickY });
+          setLayerStartPos({ x: layer.x, y: layer.y });
+          break;
+        }
       }
     }
 
@@ -455,7 +726,7 @@ export default function PhotoEditor() {
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging || !selectedLayerId) return;
+    if (!isDragging || !selectedLayerId || !activeHandle) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -469,24 +740,81 @@ export default function PhotoEditor() {
     const dx = currentX - dragStart.x;
     const dy = currentY - dragStart.y;
 
-    updateSelectedLayer({
-      x: Math.round(layerStartPos.x + dx),
-      y: Math.round(layerStartPos.y + dy),
-    });
+    const layer = layers.find((l) => l.id === selectedLayerId);
+    if (!layer) return;
+
+    if (layer.warpMode) {
+      // Perspective Warp Mode: Drag individual corners independently
+      if (activeHandle === 'move') {
+        updateSelectedLayer({
+          corners: {
+            tl: { x: Math.round(layerStartCorners.tl.x + dx), y: Math.round(layerStartCorners.tl.y + dy) },
+            tr: { x: Math.round(layerStartCorners.tr.x + dx), y: Math.round(layerStartCorners.tr.y + dy) },
+            bl: { x: Math.round(layerStartCorners.bl.x + dx), y: Math.round(layerStartCorners.bl.y + dy) },
+            br: { x: Math.round(layerStartCorners.br.x + dx), y: Math.round(layerStartCorners.br.y + dy) },
+          }
+        });
+      } else {
+        const updatedCorners = { ...layer.corners };
+        updatedCorners[activeHandle] = {
+          x: Math.round(layerStartCorners[activeHandle].x + dx),
+          y: Math.round(layerStartCorners[activeHandle].y + dy),
+        };
+        updateSelectedLayer({ corners: updatedCorners });
+      }
+    } else {
+      // Standard Uniform Scaling Mode
+      if (activeHandle === 'move') {
+        updateSelectedLayer({
+          x: Math.round(layerStartPos.x + dx),
+          y: Math.round(layerStartPos.y + dy),
+        });
+      } else {
+        // Uniform scaling calculation based on aspect ratio
+        const originalRatio = layerStartSize.width / layerStartSize.height;
+        let newWidth = layerStartSize.width;
+        let newHeight = layerStartSize.height;
+
+        if (activeHandle === 'br') {
+          newWidth = Math.max(20, layerStartSize.width + dx);
+          newHeight = newWidth / originalRatio;
+          updateSelectedLayer({
+            width: Math.round(newWidth),
+            height: Math.round(newHeight),
+          });
+        } else if (activeHandle === 'bl') {
+          newWidth = Math.max(20, layerStartSize.width - dx);
+          newHeight = newWidth / originalRatio;
+          updateSelectedLayer({
+            x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
+            width: Math.round(newWidth),
+            height: Math.round(newHeight),
+          });
+        } else if (activeHandle === 'tr') {
+          newWidth = Math.max(20, layerStartSize.width + dx);
+          newHeight = newWidth / originalRatio;
+          updateSelectedLayer({
+            y: Math.round(layerStartPos.y + (layerStartSize.height - newHeight)),
+            width: Math.round(newWidth),
+            height: Math.round(newHeight),
+          });
+        } else if (activeHandle === 'tl') {
+          newWidth = Math.max(20, layerStartSize.width - dx);
+          newHeight = newWidth / originalRatio;
+          updateSelectedLayer({
+            x: Math.round(layerStartPos.x + (layerStartSize.width - newWidth)),
+            y: Math.round(layerStartPos.y + (layerStartSize.height - newHeight)),
+            width: Math.round(newWidth),
+            height: Math.round(newHeight),
+          });
+        }
+      }
+    }
   };
 
   const handleCanvasMouseUp = () => {
     setIsDragging(false);
-  };
-
-  // Export final canvas
-  const handleExport = () => {
-    if (!canvasRef.current) return;
-    const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.95);
-    const link = document.createElement('a');
-    link.download = `pixelcraft_${activeProject.id}_export.jpg`;
-    link.href = dataUrl;
-    link.click();
+    setActiveHandle(null);
   };
 
   const selectedLayer = layers.find((l) => l.id === selectedLayerId);
@@ -766,6 +1094,34 @@ export default function PhotoEditor() {
                     </h2>
                   </div>
 
+                  {/* Distortion Mode Toggle (Only for Image Layers) */}
+                  {selectedLayer.type === 'image' && (
+                    <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-semibold text-zinc-300 block">Perspective Warp Mode</span>
+                          <span className="text-[10px] text-zinc-500">Drag corners independently to distort</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const nextWarp = !selectedLayer.warpMode;
+                            updateSelectedLayer({ 
+                              warpMode: nextWarp,
+                              corners: getInitialCorners(selectedLayer.x, selectedLayer.y, selectedLayer.width, selectedLayer.height)
+                            });
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            selectedLayer.warpMode 
+                              ? 'bg-pink-600 text-white shadow-lg shadow-pink-600/20' 
+                              : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          {selectedLayer.warpMode ? 'Active' : 'Inactive'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Text Specific Controls */}
                   {selectedLayer.type === 'text' && (
                     <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
@@ -833,58 +1189,72 @@ export default function PhotoEditor() {
                   <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-4">
                     <h3 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Transform & Position</h3>
                     
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] text-zinc-500">Position X</label>
-                        <input
-                          type="number"
-                          value={selectedLayer.x}
-                          onChange={(e) => updateSelectedLayer({ x: Number(e.target.value) })}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
-                        />
+                    {!selectedLayer.warpMode ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] text-zinc-500">Position X</label>
+                          <input
+                            type="number"
+                            value={selectedLayer.x}
+                            onChange={(e) => updateSelectedLayer({ x: Number(e.target.value) })}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-500">Position Y</label>
+                          <input
+                            type="number"
+                            value={selectedLayer.y}
+                            onChange={(e) => updateSelectedLayer({ y: Number(e.target.value) })}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-500">Width</label>
+                          <input
+                            type="number"
+                            value={selectedLayer.width}
+                            onChange={(e) => updateSelectedLayer({ width: Number(e.target.value) })}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-500">Height</label>
+                          <input
+                            type="number"
+                            value={selectedLayer.height}
+                            onChange={(e) => updateSelectedLayer({ height: Number(e.target.value) })}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500">Position Y</label>
-                        <input
-                          type="number"
-                          value={selectedLayer.y}
-                          onChange={(e) => updateSelectedLayer({ y: Number(e.target.value) })}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
-                        />
+                    ) : (
+                      <div className="space-y-2">
+                        <span className="text-[10px] text-zinc-400 block font-semibold">Corner Coordinates (Warp Mode)</span>
+                        <div className="grid grid-cols-2 gap-2 text-[10px] bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                          <div>TL: ({selectedLayer.corners.tl.x}, {selectedLayer.corners.tl.y})</div>
+                          <div>TR: ({selectedLayer.corners.tr.x}, {selectedLayer.corners.tr.y})</div>
+                          <div>BL: ({selectedLayer.corners.bl.x}, {selectedLayer.corners.bl.y})</div>
+                          <div>BR: ({selectedLayer.corners.br.x}, {selectedLayer.corners.br.y})</div>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500">Width</label>
-                        <input
-                          type="number"
-                          value={selectedLayer.width}
-                          onChange={(e) => updateSelectedLayer({ width: Number(e.target.value) })}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-zinc-500">Height</label>
-                        <input
-                          type="number"
-                          value={selectedLayer.height}
-                          onChange={(e) => updateSelectedLayer({ height: Number(e.target.value) })}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-white"
-                        />
-                      </div>
-                    </div>
+                    )}
 
                     {/* Rotation */}
-                    <div>
-                      <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                        <span>Rotation</span>
-                        <span>{selectedLayer.rotation}°</span>
+                    {!selectedLayer.warpMode && (
+                      <div>
+                        <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
+                          <span>Rotation</span>
+                          <span>{selectedLayer.rotation}°</span>
+                        </div>
+                        <input
+                          type="range" min="0" max="360"
+                          value={selectedLayer.rotation}
+                          onChange={(e) => updateSelectedLayer({ rotation: Number(e.target.value) })}
+                          className="w-full accent-purple-500"
+                        />
                       </div>
-                      <input
-                        type="range" min="0" max="360"
-                        value={selectedLayer.rotation}
-                        onChange={(e) => updateSelectedLayer({ rotation: Number(e.target.value) })}
-                        className="w-full accent-purple-500"
-                      />
-                    </div>
+                    )}
 
                     {/* Opacity */}
                     <div>
@@ -901,30 +1271,32 @@ export default function PhotoEditor() {
                     </div>
 
                     {/* Flips */}
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={() => updateSelectedLayer({ flipH: !selectedLayer.flipH })}
-                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 border rounded-lg text-xs transition-all ${
-                          selectedLayer.flipH 
-                            ? 'bg-purple-600/10 border-purple-500 text-purple-300' 
-                            : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        <FlipHorizontal className="w-3.5 h-3.5" />
-                        Flip H
-                      </button>
-                      <button
-                        onClick={() => updateSelectedLayer({ flipV: !selectedLayer.flipV })}
-                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 border rounded-lg text-xs transition-all ${
-                          selectedLayer.flipV 
-                            ? 'bg-purple-600/10 border-purple-500 text-purple-300' 
-                            : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        <FlipVertical className="w-3.5 h-3.5" />
-                        Flip V
-                      </button>
-                    </div>
+                    {!selectedLayer.warpMode && (
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={() => updateSelectedLayer({ flipH: !selectedLayer.flipH })}
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 border rounded-lg text-xs transition-all ${
+                            selectedLayer.flipH 
+                              ? 'bg-purple-600/10 border-purple-500 text-purple-300' 
+                              : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          <FlipHorizontal className="w-3.5 h-3.5" />
+                          Flip H
+                        </button>
+                        <button
+                          onClick={() => updateSelectedLayer({ flipV: !selectedLayer.flipV })}
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 border rounded-lg text-xs transition-all ${
+                            selectedLayer.flipV 
+                              ? 'bg-purple-600/10 border-purple-500 text-purple-300' 
+                              : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          <FlipVertical className="w-3.5 h-3.5" />
+                          Flip V
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Image Filters (Only for Image Layers) */}
