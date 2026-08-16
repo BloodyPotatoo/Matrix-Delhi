@@ -967,9 +967,13 @@ export default function PhotoEditor() {
   const selectedLayer = layers.find((l) => l.id === selectedLayerId);
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
+    <div className="flex flex-col h-screen bg-gradient-to-b from-zinc-900 via-zinc-950 to-zinc-900 text-zinc-100 overflow-hidden relative">
+      {/* Ambient Background Glows */}
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-pink-500/5 rounded-full blur-3xl pointer-events-none" />
+
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-md z-10">
+      <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60 bg-zinc-900/40 backdrop-blur-md z-10">
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-indigo-600 rounded-lg text-white shadow-lg shadow-indigo-500/20">
             <Sparkles className="w-5 h-5" />
@@ -986,14 +990,14 @@ export default function PhotoEditor() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setView('dashboard')}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-400 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg transition-all"
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-400 hover:text-white bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800/60 rounded-lg transition-all"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Home
             </button>
             <button
               onClick={handleReset}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800/60 hover:bg-zinc-700 border border-zinc-800/60 rounded-lg transition-all"
             >
               <RotateCcw className="w-4 h-4" />
               Reset Canvas
@@ -1011,10 +1015,10 @@ export default function PhotoEditor() {
 
       {/* View A: Main Home Dashboard */}
       {view === 'dashboard' && (
-        <div className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full flex flex-col justify-center">
+        <div className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full flex flex-col justify-center z-10">
           <div className="text-center mb-12">
             {/* Hero Typography & Visual Hierarchy */}
-            <h1 className="text-6xl md:text-8xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 drop-shadow-[0_6px_0_#4f46e5] uppercase font-mono mb-4">
+            <h1 className="text-6xl md:text-8xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 drop-shadow-[0_6px_0_#4f46e5] uppercase font-mono mb-4">
               PIXELCRAFT
             </h1>
             <h2 className="text-2xl font-bold tracking-tight text-zinc-200 mb-3">
@@ -1031,13 +1035,13 @@ export default function PhotoEditor() {
               <div
                 key={project.id}
                 onClick={() => handleSelectProject(project)}
-                className="group relative p-6 rounded-2xl bg-zinc-900/40 border border-zinc-800/80 hover:border-indigo-500/50 hover:bg-zinc-900/80 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden"
+                className="group relative p-6 rounded-2xl bg-zinc-900/30 border border-zinc-800/60 hover:border-indigo-500/50 hover:bg-zinc-900/60 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden shadow-xl"
               >
                 {/* Cyberpunk Glow Effect */}
                 <div className={`absolute -right-12 -top-12 w-24 h-24 bg-gradient-to-br ${project.accentColor} opacity-10 blur-2xl group-hover:opacity-20 transition-all duration-300`} />
                 
                 <div>
-                  <div className="p-3 bg-zinc-800/80 rounded-xl w-fit mb-4 group-hover:scale-110 transition-transform duration-300">
+                  <div className="p-3 bg-zinc-800/60 rounded-xl w-fit mb-4 group-hover:scale-110 transition-transform duration-300">
                     {project.icon}
                   </div>
                   <h3 className="text-lg font-bold text-zinc-100 mb-2 group-hover:text-indigo-300 transition-colors">
@@ -1048,7 +1052,7 @@ export default function PhotoEditor() {
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-zinc-800/50">
+                <div className="flex items-center justify-between pt-4 border-t border-zinc-800/40">
                   <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
                     Ratio: {project.aspectRatio}
                   </span>
@@ -1064,11 +1068,11 @@ export default function PhotoEditor() {
 
       {/* View B: Active Editor Workspace */}
       {view === 'editor' && (
-        <div className="flex-1 flex flex-col overflow-hidden relative">
+        <div className="flex-1 flex flex-col overflow-hidden relative z-10">
           
           {/* Context-Aware Capsule Header */}
-          <div className="w-full flex justify-center py-3 bg-zinc-950/80 border-b border-zinc-800/50 z-20">
-            <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800 shadow-xl">
+          <div className="w-full flex justify-center py-3 bg-zinc-950/40 border-b border-zinc-800/40 z-20">
+            <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900/80 rounded-full border border-zinc-800/60 shadow-xl backdrop-blur-md">
               {/* Import Button */}
               <button
                 onClick={() => capsuleFileInputRef.current?.click()}
@@ -1085,7 +1089,7 @@ export default function PhotoEditor() {
                 className="hidden"
               />
 
-              <div className="h-4 w-[1px] bg-zinc-800 mx-1" />
+              <div className="h-4 w-[1px] bg-zinc-800/60 mx-1" />
 
               {/* Text Styling Actions (Conditional Formatting) */}
               <button
@@ -1155,14 +1159,14 @@ export default function PhotoEditor() {
             {/* Collapsible Left Panel (Asset Library) */}
             {(activeProject.id === 'thumbnail' || activeProject.id === 'instagram') && (
               <div 
-                className={`border-r border-zinc-800 bg-zinc-900/50 backdrop-blur-md flex flex-col transition-all duration-300 relative z-10 ${
+                className={`border-r border-zinc-800/60 bg-zinc-900/40 backdrop-blur-md flex flex-col transition-all duration-300 relative z-10 ${
                   leftPanelOpen ? 'w-72' : 'w-0 overflow-hidden border-r-0'
                 }`}
               >
                 {/* Toggle Button */}
                 <button
                   onClick={() => setLeftPanelOpen(!leftPanelOpen)}
-                  className="absolute top-1/2 -right-4 -translate-y-1/2 w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center text-zinc-400 hover:text-white shadow-lg z-30"
+                  className="absolute top-1/2 -right-4 -translate-y-1/2 w-8 h-8 bg-zinc-900 border border-zinc-800/60 rounded-full flex items-center justify-center text-zinc-400 hover:text-white shadow-lg z-30"
                 >
                   {leftPanelOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                 </button>
@@ -1175,14 +1179,14 @@ export default function PhotoEditor() {
                       <div className="grid grid-cols-2 gap-2">
                         <button 
                           onClick={() => addTextLayer('heading')}
-                          className="p-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-left text-xs transition-all"
+                          className="p-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-xl text-left text-xs transition-all"
                         >
                           <div className="font-bold text-indigo-400">YouTube</div>
                           <div className="text-[10px] text-zinc-500">Thumbnail Layout</div>
                         </button>
                         <button 
                           onClick={() => addTextLayer('bold')}
-                          className="p-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-left text-xs transition-all"
+                          className="p-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-xl text-left text-xs transition-all"
                         >
                           <div className="font-bold text-pink-400">Instagram</div>
                           <div className="text-[10px] text-zinc-500">Square Post</div>
@@ -1205,7 +1209,7 @@ export default function PhotoEditor() {
                           <button
                             key={el.name}
                             onClick={() => addElementLayer(el.name, el.emoji)}
-                            className="p-2 bg-zinc-800/30 hover:bg-zinc-800 border border-zinc-800/80 rounded-lg text-center text-lg transition-all"
+                            className="p-2 bg-zinc-800/30 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-center text-lg transition-all"
                             title={el.name}
                           >
                             {el.emoji}
@@ -1220,19 +1224,19 @@ export default function PhotoEditor() {
                       <div className="space-y-2">
                         <button
                           onClick={() => addTextLayer('heading')}
-                          className="w-full py-2 px-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left text-sm font-bold transition-all"
+                          className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-sm font-bold transition-all"
                         >
                           Add Heading
                         </button>
                         <button
                           onClick={() => addTextLayer('bold')}
-                          className="w-full py-2 px-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left text-xs font-semibold transition-all"
+                          className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-xs font-semibold transition-all"
                         >
                           Add Subtitle
                         </button>
                         <button
                           onClick={() => addTextLayer('semibold')}
-                          className="w-full py-2 px-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-left text-[11px] transition-all"
+                          className="w-full py-2 px-3 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-left text-[11px] transition-all"
                         >
                           Add Body Text
                         </button>
@@ -1245,14 +1249,14 @@ export default function PhotoEditor() {
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           onClick={() => addShapeLayer('rect')}
-                          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-center text-xs transition-all flex flex-col items-center gap-1"
+                          className="p-2.5 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-center text-xs transition-all flex flex-col items-center gap-1"
                         >
                           <Square className="w-4 h-4 text-indigo-400" />
                           Rectangle
                         </button>
                         <button
                           onClick={() => addShapeLayer('circle')}
-                          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-center text-xs transition-all flex flex-col items-center gap-1"
+                          className="p-2.5 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-lg text-center text-xs transition-all flex flex-col items-center gap-1"
                         >
                           <Circle className="w-4 h-4 text-indigo-400" />
                           Circle
@@ -1268,7 +1272,7 @@ export default function PhotoEditor() {
             {(activeProject.id === 'thumbnail' || activeProject.id === 'instagram') && !leftPanelOpen && (
               <button
                 onClick={() => setLeftPanelOpen(true)}
-                className="absolute top-1/2 left-0 -translate-y-1/2 w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-r-full flex items-center justify-center text-zinc-400 hover:text-white shadow-lg z-30"
+                className="absolute top-1/2 left-0 -translate-y-1/2 w-8 h-8 bg-zinc-900 border border-zinc-800/60 rounded-r-full flex items-center justify-center text-zinc-400 hover:text-white shadow-lg z-30"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -1277,7 +1281,7 @@ export default function PhotoEditor() {
             {/* Center: Canvas Workspace */}
             <div 
               ref={containerRef}
-              className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden bg-zinc-950"
+              className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden bg-zinc-950/20"
             >
               {/* Dynamic Aspect Ratio Container */}
               <div 
@@ -1287,7 +1291,7 @@ export default function PhotoEditor() {
                 }}
               >
                 <div 
-                  className="relative bg-zinc-900 rounded-xl shadow-2xl border border-zinc-800 overflow-hidden flex items-center justify-center"
+                  className="relative bg-zinc-900 rounded-xl shadow-2xl border border-zinc-800/60 overflow-hidden flex items-center justify-center"
                   style={{
                     aspectRatio: activeProject.aspectRatio === 'freeform' ? 'auto' : activeProject.ratioValue,
                     width: '100%',
@@ -1304,7 +1308,7 @@ export default function PhotoEditor() {
               </div>
 
               {/* Quick Layer Import Bar */}
-              <div className="mt-4 flex items-center gap-3 bg-zinc-900/80 px-4 py-2.5 rounded-xl border border-zinc-800 backdrop-blur-md">
+              <div className="mt-4 flex items-center gap-3 bg-zinc-900/80 px-4 py-2.5 rounded-xl border border-zinc-800/60 backdrop-blur-md shadow-lg">
                 <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mr-2">Add Layer:</span>
                 <button
                   onClick={() => fileInputRef.current?.click()}
@@ -1345,7 +1349,7 @@ export default function PhotoEditor() {
             </div>
 
             {/* Right Sidebar: Interactive Advanced Property Bar */}
-            <div className="w-full lg:w-96 border-l border-zinc-800 bg-zinc-900/30 backdrop-blur-md flex flex-col h-full overflow-y-auto">
+            <div className="w-full lg:w-96 border-l border-zinc-800/60 bg-zinc-900/20 backdrop-blur-md flex flex-col h-full overflow-y-auto">
               <div className="p-6 space-y-6">
                 
                 {/* Section 1: Global Canvas Settings */}
@@ -1354,7 +1358,7 @@ export default function PhotoEditor() {
                     <Layout className="w-4 h-4 text-indigo-400" />
                     <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">Canvas Settings</h2>
                   </div>
-                  <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 space-y-3">
+                  <div className="bg-zinc-900/40 p-4 rounded-xl border border-zinc-800/60 space-y-3 shadow-md">
                     <div className="flex justify-between text-xs">
                       <span className="text-zinc-400">Active Template:</span>
                       <span className="text-indigo-400 font-semibold">{activeProject.name}</span>
@@ -1371,7 +1375,7 @@ export default function PhotoEditor() {
                             key={color}
                             onClick={() => setCanvasBgColor(color)}
                             className={`w-6 h-6 rounded-md border transition-all ${
-                              canvasBgColor === color ? 'border-indigo-500 scale-110' : 'border-zinc-800'
+                              canvasBgColor === color ? 'border-indigo-500 scale-110' : 'border-zinc-800/60'
                             }`}
                             style={{ backgroundColor: color }}
                           />
@@ -1416,7 +1420,7 @@ export default function PhotoEditor() {
                   </div>
 
                   {layers.length === 0 ? (
-                    <div className="text-center py-6 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-xl text-xs text-zinc-500">
+                    <div className="text-center py-6 bg-zinc-900/20 border border-dashed border-zinc-800/60 rounded-xl text-xs text-zinc-500">
                       No layers added yet. Use the bar below the canvas to add layers.
                     </div>
                   ) : (
@@ -1428,7 +1432,7 @@ export default function PhotoEditor() {
                           className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs cursor-pointer transition-all ${
                             layer.id === selectedLayerId
                               ? 'bg-indigo-600/10 border-indigo-500 text-indigo-300'
-                              : 'bg-zinc-900/40 border-zinc-800 hover:border-zinc-700 text-zinc-400'
+                              : 'bg-zinc-900/40 border-zinc-800/60 hover:border-zinc-700 text-zinc-400'
                           }`}
                         >
                           <span className="truncate font-medium">{layer.name}</span>
@@ -1441,7 +1445,7 @@ export default function PhotoEditor() {
 
                 {/* Section 3: Selected Layer Properties (Accordion Panel) */}
                 {selectedLayer ? (
-                  <div className="space-y-4 pt-4 border-t border-zinc-800">
+                  <div className="space-y-4 pt-4 border-t border-zinc-800/60">
                     <div className="flex items-center gap-2 mb-2">
                       <Sliders className="w-4 h-4 text-purple-400" />
                       <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
@@ -1450,7 +1454,7 @@ export default function PhotoEditor() {
                     </div>
 
                     {/* Accordion 1: Opacity & Layer Alpha */}
-                    <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                       <button
                         onClick={() => toggleAccordion('opacity')}
                         className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
@@ -1459,7 +1463,7 @@ export default function PhotoEditor() {
                         <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${rightAccordion.opacity ? 'rotate-180' : ''}`} />
                       </button>
                       {rightAccordion.opacity && (
-                        <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                        <div className="p-4 border-t border-zinc-800/40 space-y-4">
                           <div>
                             <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
                               <span>Layer Opacity</span>
@@ -1477,7 +1481,7 @@ export default function PhotoEditor() {
                     </div>
 
                     {/* Accordion 2: Filters & Adjustments */}
-                    <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                    <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                       <button
                         onClick={() => toggleAccordion('filters')}
                         className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
@@ -1486,7 +1490,7 @@ export default function PhotoEditor() {
                         <Sliders className="w-4 h-4 text-zinc-500" />
                       </button>
                       {rightAccordion.filters && (
-                        <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                        <div className="p-4 border-t border-zinc-800/40 space-y-4">
                           {/* Brightness */}
                           <div className="space-y-1">
                             <div className="flex justify-between text-xs">
@@ -1556,8 +1560,8 @@ export default function PhotoEditor() {
                     </div>
 
                     {/* Accordion 3: Crop & Perspective Warp */}
-                    {selectedLayer.type === 'image' && (
-                      <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                    {(selectedLayer.type === 'image' || selectedLayer.type === 'element') && (
+                      <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                         <button
                           onClick={() => toggleAccordion('crop')}
                           className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
@@ -1566,7 +1570,7 @@ export default function PhotoEditor() {
                           <Maximize2 className="w-4 h-4 text-zinc-500" />
                         </button>
                         {rightAccordion.crop && (
-                          <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                          <div className="p-4 border-t border-zinc-800/40 space-y-4">
                             <div className="flex items-center justify-between">
                               <div>
                                 <span className="text-xs font-semibold text-zinc-300 block">Perspective Warp Mode</span>
@@ -1596,7 +1600,7 @@ export default function PhotoEditor() {
 
                     {/* Accordion 4: Brush & Eraser Properties */}
                     {activeProject.type === 'whiteboard' && (
-                      <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                      <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                         <button
                           onClick={() => toggleAccordion('brush')}
                           className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
@@ -1605,7 +1609,7 @@ export default function PhotoEditor() {
                           <Paintbrush className="w-4 h-4 text-zinc-500" />
                         </button>
                         {rightAccordion.brush && (
-                          <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                          <div className="p-4 border-t border-zinc-800/40 space-y-4">
                             <div>
                               <label className="text-xs text-zinc-400 block mb-2">Brush Color</label>
                               <div className="flex gap-2">
@@ -1628,7 +1632,7 @@ export default function PhotoEditor() {
 
                     {/* Accordion 5: Typography & Text Box */}
                     {selectedLayer.type === 'text' && (
-                      <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/50">
+                      <div className="border border-zinc-800/60 rounded-xl overflow-hidden bg-zinc-900/40 shadow-sm">
                         <button
                           onClick={() => toggleAccordion('text')}
                           className="w-full px-4 py-3 flex items-center justify-between text-xs font-bold text-zinc-300 hover:bg-zinc-800/50 transition-all"
@@ -1637,7 +1641,7 @@ export default function PhotoEditor() {
                           <Type className="w-4 h-4 text-zinc-500" />
                         </button>
                         {rightAccordion.text && (
-                          <div className="p-4 border-t border-zinc-800/50 space-y-4">
+                          <div className="p-4 border-t border-zinc-800/40 space-y-4">
                             <div>
                               <label className="text-[11px] text-zinc-400 block mb-1">Text Content</label>
                               <input
@@ -1693,7 +1697,7 @@ export default function PhotoEditor() {
 
                   </div>
                 ) : (
-                  <div className="text-center py-8 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-xl text-xs text-zinc-500">
+                  <div className="text-center py-8 bg-zinc-900/20 border border-dashed border-zinc-800/60 rounded-xl text-xs text-zinc-500">
                     Select a layer on the canvas or in the list to view and edit properties.
                   </div>
                 )}
