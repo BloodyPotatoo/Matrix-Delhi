@@ -1660,15 +1660,23 @@ export default function PhotoEditor() {
     }
   };
 
-  // Keyboard listener for Presentation Mode exit & slide navigation
+  // Keyboard listener for Presentation Mode exit, slide navigation, and shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isTyping = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.hasAttribute('contenteditable')
+      );
+
       if (e.key === 'q' || e.key === 'Q') {
         if (document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
         }
         setIsFullscreenPresentation(false);
       }
+
       if (isFullscreenPresentation) {
         if (e.key === 'ArrowRight') {
           if (activeSlideIndex < slides.length - 1) {
@@ -1681,10 +1689,31 @@ export default function PhotoEditor() {
           }
         }
       }
+
+      // If typing, do not trigger editor shortcuts
+      if (isTyping) return;
+
+      // Delete Layer Shortcut (Delete or Backspace)
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        deleteLayer();
+      }
+
+      // Move Layer Up (Ctrl + ArrowUp)
+      if (e.ctrlKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        moveLayer('up');
+      }
+
+      // Move Layer Down (Ctrl + ArrowDown)
+      if (e.ctrlKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        moveLayer('down');
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreenPresentation, activeSlideIndex, slides, layers]);
+  }, [isFullscreenPresentation, activeSlideIndex, slides, layers, selectedLayerId, selectedLayerIds]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
