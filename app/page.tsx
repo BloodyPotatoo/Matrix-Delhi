@@ -2459,7 +2459,7 @@ export default function PhotoEditor() {
                                 theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200 shadow-sm'
                               }`}
                             >
-                              <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&q=80" className="w-full h-24 object-cover" alt="Instagram Template 1" />
+                              <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&q=80" className="w-full h-24 object-cover" alt="Instagram Template 1" />
                               <div className={`p-2 text-[11px] font-semibold ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Minimalist Square Post</div>
                             </div>
                             <div 
