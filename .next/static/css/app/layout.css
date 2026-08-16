@@ -1173,6 +1173,9 @@ video {
 .text-\[11px\] {
   font-size: 11px;
 }
+.text-\[9px\] {
+  font-size: 9px;
+}
 .text-lg {
   font-size: 1.125rem;
   line-height: 1.75rem;
