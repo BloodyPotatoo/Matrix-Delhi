@@ -165,6 +165,29 @@ const PROJECT_TEMPLATES: ProjectConfig[] = [
   },
 ];
 
+const MEME_TEMPLATES = [
+  {
+    name: 'Doge',
+    url: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=500&auto=format&fit=crop&q=80',
+  },
+  {
+    name: 'Distracted Boyfriend',
+    url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&auto=format&fit=crop&q=80',
+  },
+  {
+    name: 'Drake Hotline',
+    url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+  },
+  {
+    name: 'Grumpy Cat',
+    url: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&auto=format&fit=crop&q=80',
+  },
+  {
+    name: 'Success Kid',
+    url: 'https://images.unsplash.com/photo-1502082553048-f009c37129b9?w=500&auto=format&fit=crop&q=80',
+  },
+];
+
 export default function PhotoEditor() {
   // Navigation & Routing State
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
@@ -265,6 +288,39 @@ export default function PhotoEditor() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // Add Meme Layer
+  const addMemeLayer = (name: string, url: string) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = url;
+    img.onload = () => {
+      const width = 300;
+      const height = (300 / img.width) * img.height;
+      const x = 150;
+      const y = 150 + layers.length * 15;
+      const newLayer: Layer = {
+        id: Date.now().toString(),
+        type: 'image',
+        name: `${name} Meme`,
+        src: url,
+        imgElement: img,
+        warpMode: false,
+        corners: getInitialCorners(x, y, width, height),
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+        rotation: 0,
+        opacity: 100,
+        flipH: false,
+        flipV: false,
+        filters: { ...DEFAULT_FILTERS },
+      };
+      setLayers((prev) => [...prev, newLayer]);
+      setSelectedLayerId(newLayer.id);
+    };
   };
 
   // Add Text Layer
@@ -1194,6 +1250,23 @@ export default function PhotoEditor() {
                       </div>
                     </div>
 
+                    {/* Memes Section */}
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Memes</h3>
+                      <div className="grid grid-cols-2 gap-2">
+                        {MEME_TEMPLATES.map((meme) => (
+                          <button
+                            key={meme.name}
+                            onClick={() => addMemeLayer(meme.name, meme.url)}
+                            className="p-2 bg-zinc-800/40 hover:bg-zinc-800/80 border border-zinc-800/60 rounded-xl text-left text-xs transition-all"
+                          >
+                            <div className="font-bold text-amber-400 truncate">{meme.name}</div>
+                            <div className="text-[9px] text-zinc-500">Add Meme</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Elements Section */}
                     <div>
                       <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Elements</h3>
@@ -1316,6 +1389,16 @@ export default function PhotoEditor() {
                 >
                   <Upload className="w-3.5 h-3.5" />
                   Image Layer
+                </button>
+                <button
+                  onClick={() => {
+                    const randomMeme = MEME_TEMPLATES[Math.floor(Math.random() * MEME_TEMPLATES.length)];
+                    addMemeLayer(randomMeme.name, randomMeme.url);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all"
+                >
+                  <Smile className="w-3.5 h-3.5 text-amber-400" />
+                  Meme
                 </button>
                 <button
                   onClick={() => addTextLayer()}
